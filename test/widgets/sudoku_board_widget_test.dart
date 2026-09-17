@@ -1,42 +1,40 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mrsudoku/logic/hint_engine.dart';
 import 'package:mrsudoku/models/board.dart';
 import 'package:mrsudoku/models/settings.dart';
 import 'package:mrsudoku/ui/widgets/sudoku_board_widget.dart';
-import 'package:mrsudoku/ui/widgets/sudoku_cell_widget.dart';
 
-/// Set of every cell (as "row-col") the board currently reports as
-/// peer-highlighted, for the given selection/focus-unit combination.
-Future<Set<String>> _peerHighlightedCells(
-  WidgetTester tester, {
+/// Set of every cell (as "row-col") the board reports as peer-highlighted
+/// for the given selection/focus-unit combination. Calls
+/// [SudokuBoardWidget.isPeerHighlighted] directly rather than pumping a
+/// widget tree - the highlight rule is plain logic over [Board], unrelated
+/// to how the board happens to render its cells.
+Set<String> _peerHighlightedCells({
   required int selectedRow,
   required int selectedCol,
   HintUnitType? hintFocusUnit,
-}) async {
-  await tester.pumpWidget(
-    MaterialApp(
-      home: Scaffold(
-        body: SudokuBoardWidget(
-          board: Board.empty(),
-          solution: null,
-          selectedRow: selectedRow,
-          selectedCol: selectedCol,
-          highlightEnabled: true,
-          highlightColor: HighlightColor.red,
-          showErrors: false,
-          hintFocusUnit: hintFocusUnit,
-          onCellTap: (row, col) {},
-        ),
-      ),
-    ),
+}) {
+  final widget = SudokuBoardWidget(
+    board: Board.empty(),
+    solution: null,
+    selectedRow: selectedRow,
+    selectedCol: selectedCol,
+    highlightEnabled: true,
+    highlightColor: HighlightColor.red,
+    showErrors: false,
+    hintFocusUnit: hintFocusUnit,
+    onCellTap: (row, col) {},
   );
 
+  // isPeerHighlighted alone doesn't exclude the selected cell (it trivially
+  // shares every one of its own units with itself) - the board widget only
+  // treats it as a peer highlight when combined with "not selected" at the
+  // render site, so match that here too.
   final result = <String>{};
   for (var r = 0; r < kBoardSize; r++) {
     for (var c = 0; c < kBoardSize; c++) {
-      final widget = tester.widget<SudokuCellWidget>(find.byKey(ValueKey('cell-$r-$c')));
-      if (widget.isPeerHighlighted) result.add('$r-$c');
+      if ((r, c) == (selectedRow, selectedCol)) continue;
+      if (widget.isPeerHighlighted(r, c)) result.add('$r-$c');
     }
   }
   return result;
@@ -45,8 +43,8 @@ Future<Set<String>> _peerHighlightedCells(
 void main() {
   const row = 4, col = 4; // center cell, box (1, 1)
 
-  testWidgets('with no hint focus, the full row+column+box is highlighted', (tester) async {
-    final highlighted = await _peerHighlightedCells(tester, selectedRow: row, selectedCol: col);
+  test('with no hint focus, the full row+column+box is highlighted', () {
+    final highlighted = _peerHighlightedCells(selectedRow: row, selectedCol: col);
 
     for (var c = 0; c < kBoardSize; c++) {
       if (c != col) expect(highlighted, contains('$row-$c'), reason: 'row peer $row-$c');
@@ -59,9 +57,8 @@ void main() {
     expect(highlighted, isNot(contains('0-0')));
   });
 
-  testWidgets('a row hint focus highlights only the row', (tester) async {
-    final highlighted = await _peerHighlightedCells(
-      tester,
+  test('a row hint focus highlights only the row', () {
+    final highlighted = _peerHighlightedCells(
       selectedRow: row,
       selectedCol: col,
       hintFocusUnit: HintUnitType.row,
@@ -70,9 +67,8 @@ void main() {
     expect(highlighted, {for (var c = 0; c < kBoardSize; c++) if (c != col) '$row-$c'});
   });
 
-  testWidgets('a column hint focus highlights only the column', (tester) async {
-    final highlighted = await _peerHighlightedCells(
-      tester,
+  test('a column hint focus highlights only the column', () {
+    final highlighted = _peerHighlightedCells(
       selectedRow: row,
       selectedCol: col,
       hintFocusUnit: HintUnitType.column,
@@ -81,9 +77,8 @@ void main() {
     expect(highlighted, {for (var r = 0; r < kBoardSize; r++) if (r != row) '$r-$col'});
   });
 
-  testWidgets('a box hint focus highlights only the 3x3 box', (tester) async {
-    final highlighted = await _peerHighlightedCells(
-      tester,
+  test('a box hint focus highlights only the 3x3 box', () {
+    final highlighted = _peerHighlightedCells(
       selectedRow: row,
       selectedCol: col,
       hintFocusUnit: HintUnitType.box,

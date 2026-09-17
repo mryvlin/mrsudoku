@@ -5,12 +5,12 @@ import '../../models/board.dart';
 import '../../models/puzzle_shape.dart';
 import '../../models/settings.dart';
 import '../highlight_colors.dart';
-import 'sudoku_cell_widget.dart';
 
 /// Renders [board]'s full grid - a plain 9x9 for the classic layout, or a
-/// Samurai board's 21x21 bounding shape with its blank corner gaps - and
-/// works out selection/peer/same-value/error highlighting and box-boundary
-/// borders from [Board.shape] rather than a fixed grid size.
+/// Samurai board's 21x21 bounding shape with its blank corner gaps - as a
+/// single [CustomPaint], with tap position converted to a (row, col) by
+/// dividing by the cell size rather than relying on one Flutter widget per
+/// cell for hit-testing.
 ///
 /// Stays square (or whatever aspect [PuzzleShape.height]/`width` implies -
 /// 1:1 for both current shapes) and centered via [AspectRatio] so it scales
@@ -59,7 +59,12 @@ class SudokuBoardWidget extends StatelessWidget {
   /// Samurai shared-box cell the selected cell has extra row/column units
   /// (one set per grid it belongs to), so its peers correctly span both
   /// grids without any special-casing here.
-  bool _isPeer(int row, int col) {
+  ///
+  /// Public (rather than the usual private helper) so tests can check the
+  /// highlight logic directly against a plain [SudokuBoardWidget] instance,
+  /// without needing to pump a widget tree and dig through however the
+  /// board happens to render it.
+  bool isPeerHighlighted(int row, int col) {
     if (!_hasSelection) return false;
     final selectedUnits = board.unitsContaining(selectedRow!, selectedCol!);
     final focus = hintFocusUnit;
@@ -82,65 +87,247 @@ class SudokuBoardWidget extends StatelessWidget {
   /// relying on that falling out of the box-sharing check by coincidence.
   static bool _isBoxBoundary(int c) => c % kBoxSize == 0;
 
+  Map<(int, int), _CellVisual> _buildVisuals(ThemeData theme, Color resolvedHighlight) {
+    final shape = board.shape;
+    final selectedValue = _hasSelection ? board.cellAt(selectedRow!, selectedCol!).value : 0;
+    final highlightedValue = highlightEnabled ? selectedValue : 0;
+    final visuals = <(int, int), _CellVisual>{};
+
+    for (final (row, col) in shape.activeCells) {
+      final cell = board.cellAt(row, col);
+      final isSelected = _hasSelection && row == selectedRow && col == selectedCol;
+      final isPeer = highlightEnabled && !isSelected && isPeerHighlighted(row, col);
+      final isSameValue =
+          highlightEnabled && !isSelected && selectedValue != 0 && cell.value == selectedValue;
+      final hasMatchingNote =
+          highlightedValue != 0 && cell.isEmpty && cell.notes.contains(highlightedValue);
+      final isError = showErrors &&
+          solution != null &&
+          !cell.isEmpty &&
+          cell.value != solution!.cellAt(row, col).value;
+      final isHighlightedValue = isSelected || isSameValue;
+
+      final background = isSelected
+          ? resolvedHighlight.withValues(alpha: 0.35)
+          : isSameValue
+              ? resolvedHighlight.withValues(alpha: 0.20)
+              : hasMatchingNote
+                  ? resolvedHighlight.withValues(alpha: 0.12)
+                  : isPeer
+                      ? resolvedHighlight.withValues(alpha: 0.08)
+                      : theme.colorScheme.surface;
+
+      final valueColor = cell.isEmpty
+          ? null
+          : isError
+              ? theme.colorScheme.error
+              : isHighlightedValue
+                  ? resolvedHighlight
+                  : cell.isGiven
+                      ? theme.colorScheme.onSurface
+                      : theme.colorScheme.primary;
+
+      visuals[(row, col)] = _CellVisual(
+        value: cell.value,
+        notes: cell.notes,
+        background: background,
+        valueColor: valueColor,
+        valueWeight: isHighlightedValue
+            ? FontWeight.w800
+            : (cell.isGiven ? FontWeight.w700 : FontWeight.w500),
+        isThickLeft:
+            col > 0 && _isBoxBoundary(col) && !shape.activeCells.contains((row, col - 1)),
+        isThickTop: row > 0 && _isBoxBoundary(row) && !shape.activeCells.contains((row - 1, col)),
+        isThickRight: col + 1 < shape.width && _isBoxBoundary(col + 1),
+        isThickBottom: row + 1 < shape.height && _isBoxBoundary(row + 1),
+      );
+    }
+    return visuals;
+  }
+
   @override
   Widget build(BuildContext context) {
     final shape = board.shape;
-    final selectedValue = _hasSelection ? board.cellAt(selectedRow!, selectedCol!).value : 0;
-    final resolvedHighlight = highlightColor.resolve(Theme.of(context).brightness);
+    final theme = Theme.of(context);
+    final resolvedHighlight = highlightColor.resolve(theme.brightness);
+    final visuals = _buildVisuals(theme, resolvedHighlight);
+    final highlightedValue =
+        highlightEnabled && _hasSelection ? board.cellAt(selectedRow!, selectedCol!).value : 0;
 
     return AspectRatio(
       aspectRatio: shape.width / shape.height,
       child: Container(
         decoration: BoxDecoration(
-          border: Border.all(color: Theme.of(context).colorScheme.outline, width: 2),
+          border: Border.all(color: theme.colorScheme.outline, width: 2),
         ),
-        child: GridView.builder(
-          physics: const NeverScrollableScrollPhysics(),
-          padding: EdgeInsets.zero,
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: shape.width),
-          itemCount: shape.height * shape.width,
-          itemBuilder: (context, index) {
-            final row = index ~/ shape.width;
-            final col = index % shape.width;
-            if (!shape.activeCells.contains((row, col))) {
-              return const SizedBox.shrink();
-            }
-
-            final cell = board.cellAt(row, col);
-            final isSelected = _hasSelection && row == selectedRow && col == selectedCol;
-
-            final isPeer = highlightEnabled && !isSelected && _isPeer(row, col);
-
-            final isSameValue = highlightEnabled &&
-                !isSelected &&
-                selectedValue != 0 &&
-                cell.value == selectedValue;
-
-            final isError = showErrors &&
-                solution != null &&
-                !cell.isEmpty &&
-                cell.value != solution!.cellAt(row, col).value;
-
-            return SudokuCellWidget(
-              key: ValueKey('cell-$row-$col'),
-              cell: cell,
-              isSelected: isSelected,
-              isPeerHighlighted: isPeer,
-              isSameValueHighlighted: isSameValue,
-              isError: isError,
-              isThickRightBorder: col + 1 < shape.width && _isBoxBoundary(col + 1),
-              isThickBottomBorder: row + 1 < shape.height && _isBoxBoundary(row + 1),
-              isThickLeftBorder:
-                  col > 0 && _isBoxBoundary(col) && !shape.activeCells.contains((row, col - 1)),
-              isThickTopBorder:
-                  row > 0 && _isBoxBoundary(row) && !shape.activeCells.contains((row - 1, col)),
-              highlightedValue: highlightEnabled ? selectedValue : 0,
-              highlightColor: resolvedHighlight,
-              onTap: () => onCellTap(row, col),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final cellSize = constraints.maxWidth / shape.width;
+            return GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapUp: (details) {
+                final col = (details.localPosition.dx / cellSize).floor();
+                final row = (details.localPosition.dy / cellSize).floor();
+                if (shape.activeCells.contains((row, col))) onCellTap(row, col);
+              },
+              child: CustomPaint(
+                size: constraints.biggest,
+                painter: _BoardPainter(
+                  visuals: visuals,
+                  cellSize: cellSize,
+                  thinBorderColor: theme.colorScheme.outlineVariant,
+                  thickBorderColor: theme.colorScheme.outline,
+                  valueStyle: theme.textTheme.headlineSmall ?? const TextStyle(),
+                  noteStyle: theme.textTheme.labelSmall ?? const TextStyle(),
+                  noteColor: theme.colorScheme.onSurfaceVariant,
+                  highlightColor: resolvedHighlight,
+                  highlightedValue: highlightedValue,
+                ),
+              ),
             );
           },
         ),
       ),
     );
   }
+}
+
+/// Everything a cell needs to be painted, precomputed once per build so
+/// [_BoardPainter.paint] is pure geometry/canvas calls with no theme or
+/// highlight-rule logic of its own.
+class _CellVisual {
+  final int value;
+  final Set<int> notes;
+  final Color background;
+  final Color? valueColor;
+  final FontWeight valueWeight;
+  final bool isThickLeft;
+  final bool isThickTop;
+  final bool isThickRight;
+  final bool isThickBottom;
+
+  const _CellVisual({
+    required this.value,
+    required this.notes,
+    required this.background,
+    required this.valueColor,
+    required this.valueWeight,
+    required this.isThickLeft,
+    required this.isThickTop,
+    required this.isThickRight,
+    required this.isThickBottom,
+  });
+}
+
+class _BoardPainter extends CustomPainter {
+  final Map<(int, int), _CellVisual> visuals;
+  final double cellSize;
+  final Color thinBorderColor;
+  final Color thickBorderColor;
+  final TextStyle valueStyle;
+  final TextStyle noteStyle;
+  final Color noteColor;
+  final Color highlightColor;
+  final int highlightedValue;
+
+  _BoardPainter({
+    required this.visuals,
+    required this.cellSize,
+    required this.thinBorderColor,
+    required this.thickBorderColor,
+    required this.valueStyle,
+    required this.noteStyle,
+    required this.noteColor,
+    required this.highlightColor,
+    required this.highlightedValue,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final backgroundPaint = Paint()..style = PaintingStyle.fill;
+    final thinBorder = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.6
+      ..color = thinBorderColor;
+    final thickBorder = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.6
+      ..color = thickBorderColor;
+
+    for (final entry in visuals.entries) {
+      final (row, col) = entry.key;
+      final visual = entry.value;
+      final rect = Rect.fromLTWH(col * cellSize, row * cellSize, cellSize, cellSize);
+
+      backgroundPaint.color = visual.background;
+      canvas.drawRect(rect, backgroundPaint);
+
+      canvas.drawLine(rect.topRight, rect.bottomRight, visual.isThickRight ? thickBorder : thinBorder);
+      canvas.drawLine(rect.bottomLeft, rect.bottomRight, visual.isThickBottom ? thickBorder : thinBorder);
+      if (visual.isThickLeft) canvas.drawLine(rect.topLeft, rect.bottomLeft, thickBorder);
+      if (visual.isThickTop) canvas.drawLine(rect.topLeft, rect.topRight, thickBorder);
+
+      if (visual.value != 0) {
+        _paintText(
+          canvas,
+          '${visual.value}',
+          rect.center,
+          valueStyle.copyWith(
+            color: visual.valueColor,
+            fontWeight: visual.valueWeight,
+            fontSize: cellSize * 0.6,
+          ),
+        );
+      } else if (visual.notes.isNotEmpty) {
+        _paintNotes(canvas, rect, visual.notes);
+      }
+    }
+  }
+
+  void _paintNotes(Canvas canvas, Rect rect, Set<int> notes) {
+    final subSize = rect.width / 3;
+    for (final digit in notes) {
+      final localIndex = digit - 1;
+      final center = Offset(
+        rect.left + (localIndex % 3) * subSize + subSize / 2,
+        rect.top + (localIndex ~/ 3) * subSize + subSize / 2,
+      );
+      final isMatching = digit == highlightedValue;
+      if (isMatching) {
+        final badge = RRect.fromRectAndRadius(
+          Rect.fromCenter(center: center, width: subSize * 0.8, height: subSize * 0.72),
+          const Radius.circular(3),
+        );
+        canvas.drawRRect(
+          badge,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1
+            ..color = highlightColor,
+        );
+      }
+      _paintText(
+        canvas,
+        '$digit',
+        center,
+        noteStyle.copyWith(
+          color: isMatching ? highlightColor : noteColor,
+          fontWeight: isMatching ? FontWeight.w800 : null,
+          height: 1,
+          fontSize: subSize * 0.6,
+        ),
+      );
+    }
+  }
+
+  void _paintText(Canvas canvas, String text, Offset center, TextStyle style) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    painter.paint(canvas, center - Offset(painter.width / 2, painter.height / 2));
+  }
+
+  @override
+  bool shouldRepaint(covariant _BoardPainter oldDelegate) => true;
 }

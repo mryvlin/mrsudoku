@@ -8,6 +8,7 @@ import 'package:mrsudoku/models/board.dart';
 import 'package:mrsudoku/models/difficulty.dart';
 import 'package:mrsudoku/models/game_state.dart';
 import 'package:mrsudoku/ui/screens/game_screen.dart';
+import 'package:mrsudoku/ui/widgets/sudoku_board_widget.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 int _filledCellCount(Board board) {
@@ -18,6 +19,15 @@ int _filledCellCount(Board board) {
     }
   }
   return count;
+}
+
+/// Taps the board at (row, col), in cell coordinates - the board now paints
+/// its own grid on a single canvas rather than one tappable widget per
+/// cell, so a tap needs a pixel offset instead of a `find.byKey`.
+Future<void> _tapCell(WidgetTester tester, int row, int col) async {
+  final boardRect = tester.getRect(find.byType(SudokuBoardWidget));
+  final cellSize = boardRect.width / kBoardSize; // classic layout only: square, 9x9
+  await tester.tapAt(boardRect.topLeft + Offset((col + 0.5) * cellSize, (row + 0.5) * cellSize));
 }
 
 (int, int) _firstEmptyCell(GameState state) {
@@ -70,7 +80,7 @@ void main() {
     final correctValue =
         container.read(gameControllerProvider)!.solution.cellAt(pos.$1, pos.$2).value;
 
-    await tester.tap(find.byKey(ValueKey('cell-${pos.$1}-${pos.$2}')));
+    await _tapCell(tester, pos.$1, pos.$2);
     await tester.pump();
     await tester.tap(find.byKey(ValueKey('numpad-$correctValue')));
     await tester.pump();
@@ -91,7 +101,7 @@ void main() {
     final candidate =
         Candidates.forCell(container.read(gameControllerProvider)!.board, pos.$1, pos.$2).first;
 
-    await tester.tap(find.byKey(ValueKey('cell-${pos.$1}-${pos.$2}')));
+    await _tapCell(tester, pos.$1, pos.$2);
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('toolbar-notes')));
     await tester.pump();
@@ -113,7 +123,7 @@ void main() {
     final correctValue =
         container.read(gameControllerProvider)!.solution.cellAt(pos.$1, pos.$2).value;
 
-    await tester.tap(find.byKey(ValueKey('cell-${pos.$1}-${pos.$2}')));
+    await _tapCell(tester, pos.$1, pos.$2);
     await tester.pump();
     await tester.tap(find.byKey(ValueKey('numpad-$correctValue')));
     await tester.pump();
