@@ -254,13 +254,25 @@ class _BoardPainter extends CustomPainter {
       ..strokeWidth = 1.6
       ..color = thickBorderColor;
 
+    // Backgrounds are filled in their own pass, before any border is drawn.
+    // A border stroke has width and straddles the line between two cells,
+    // bleeding half its width into the neighbor's rect - if that neighbor's
+    // background were filled afterward (as when both were painted in one
+    // combined per-cell pass), its fill would paint back over that bleed,
+    // blending a highlighted cell's tint into the border color and making
+    // the shared edge look like a smudged, doubled line. Painting every
+    // background first means no fill ever runs after any border exists.
+    for (final entry in visuals.entries) {
+      final (row, col) = entry.key;
+      final rect = Rect.fromLTWH(col * cellSize, row * cellSize, cellSize, cellSize);
+      backgroundPaint.color = entry.value.background;
+      canvas.drawRect(rect, backgroundPaint);
+    }
+
     for (final entry in visuals.entries) {
       final (row, col) = entry.key;
       final visual = entry.value;
       final rect = Rect.fromLTWH(col * cellSize, row * cellSize, cellSize, cellSize);
-
-      backgroundPaint.color = visual.background;
-      canvas.drawRect(rect, backgroundPaint);
 
       canvas.drawLine(rect.topRight, rect.bottomRight, visual.isThickRight ? thickBorder : thinBorder);
       canvas.drawLine(rect.bottomLeft, rect.bottomRight, visual.isThickBottom ? thickBorder : thinBorder);
