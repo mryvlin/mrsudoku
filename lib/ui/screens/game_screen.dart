@@ -41,6 +41,11 @@ class _GameScreenState extends ConsumerState<GameScreen> with WidgetsBindingObse
 
   late ScaffoldMessengerState _messenger;
 
+  /// Lets [_showWinDialog] find the board's on-screen rect so the win
+  /// explosion's digits can fly out from wherever they were actually
+  /// showing, instead of some assumed/fixed layout.
+  final _boardKey = GlobalKey();
+
   @override
   void initState() {
     super.initState();
@@ -91,7 +96,7 @@ class _GameScreenState extends ConsumerState<GameScreen> with WidgetsBindingObse
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         if (gameState.isWon) {
-          _showWinDialog(gameState.elapsedSeconds);
+          _showWinDialog(gameState.elapsedSeconds, gameState.board);
         } else {
           _showGameOverDialog();
         }
@@ -151,6 +156,7 @@ class _GameScreenState extends ConsumerState<GameScreen> with WidgetsBindingObse
                               onResume: () => ref.read(gameControllerProvider.notifier).togglePause(),
                             )
                           : _Board(
+                              boardKey: _boardKey,
                               layout: gameState.layout,
                               board: gameState.board,
                               solution: gameState.solution,
@@ -276,9 +282,13 @@ class _GameScreenState extends ConsumerState<GameScreen> with WidgetsBindingObse
     Navigator.of(context).pop(); // back to Home
   }
 
-  void _showWinDialog(int elapsedSeconds) {
+  void _showWinDialog(int elapsedSeconds, Board board) {
     final l10n = AppLocalizations.of(context)!;
-    showWinCelebration(context);
+    final renderBox = _boardKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox != null) {
+      final boardRect = renderBox.localToGlobal(Offset.zero) & renderBox.size;
+      showWinCelebration(context, board: board, boardRect: boardRect);
+    }
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -313,6 +323,7 @@ class _GameScreenState extends ConsumerState<GameScreen> with WidgetsBindingObse
 /// than fits legibly on a phone screen at once - and left unwrapped for the
 /// classic board, which already fits comfortably.
 class _Board extends StatelessWidget {
+  final GlobalKey boardKey;
   final BoardLayout layout;
   final Board board;
   final Board? solution;
@@ -325,6 +336,7 @@ class _Board extends StatelessWidget {
   final void Function(int row, int col) onCellTap;
 
   const _Board({
+    required this.boardKey,
     required this.layout,
     required this.board,
     required this.solution,
@@ -341,6 +353,7 @@ class _Board extends StatelessWidget {
   Widget build(BuildContext context) {
     final isClassic = layout == BoardLayout.classic;
     final boardWidget = SudokuBoardWidget(
+      key: boardKey,
       board: board,
       solution: solution,
       selectedRow: selectedRow,
