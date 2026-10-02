@@ -13,8 +13,8 @@ The core UI (grid, number entry, number pad) is built with plain Flutter
 widgets instead of a pure Flame-canvas solution - for a grid-based puzzle
 this is more robust, more accessible (screen reader, touch targets, layout),
 and easier to maintain. Flame is used specifically where it adds real value:
-the confetti particle effect when the puzzle is solved
-(`lib/ui/widgets/win_celebration.dart`).
+the win animation, where every digit of the solved board flies outward from
+its cell, spinning and growing (`lib/ui/widgets/win_celebration.dart`).
 
 **Board layouts are a shape, not a special case.** `PuzzleShape`
 (`lib/models/puzzle_shape.dart`) generalizes "a 9x9 grid with 3x3 boxes" into
@@ -86,7 +86,8 @@ lib/
               generated `AppLocalizations` (see l10n.yaml).
   ui/         Flutter widgets: screens (Home - with a board-layout picker,
               Game, Settings) and reusable widgets (shape-agnostic Sudoku
-              grid and cell, number pad, toolbar incl. the auto-solve
+              board, drawn by a single CustomPainter - cells, notes and the
+              thick outline along box and grid edges - number pad, toolbar incl. the auto-solve
               toggle, leaderboard card grouped by difficulty and layout, win
               animation), plus small UI-layer helpers that localize model
               enums (difficulty names, board layout names, highlight color
@@ -142,7 +143,11 @@ test/
   row/column/box that forced it, instead of just revealing the answer.
   Number of hints per game is configurable (default 5).
 - Optional auto-solve: a toggle that automatically fills in any cell left
-  with exactly one legal candidate after every move, one cell at a time.
+  with exactly one candidate after every move, one cell at a time. It
+  respects your pencil marks: digits you've crossed out of a cell's notes
+  count as eliminated, and removing a note re-runs it, so a cell you've
+  narrowed down to one digit gets filled in. Cells without notes use their
+  legal candidates.
 - Cell selection via tap/click (tapping the already-selected cell
   deselects it), number pad (1-9 + erase), works with touch and mouse
   alike.
@@ -159,7 +164,8 @@ test/
   launch - or the player can start a new game instead, replacing the save.
 - Local leaderboard: the fastest completion times are tracked and shown on
   the Home screen, grouped by difficulty and board layout.
-- Win detection with confetti animation (Flame).
+- Win detection with an exploding-digit animation (Flame): every digit
+  flies outward from its cell, also on zoomed multi-grid boards.
 - Dark/light mode and language (German/English) each optionally follow the
   system; a settings screen covers all of the above.
 
@@ -202,8 +208,8 @@ and reproducibility per difficulty level and per board layout), Validator
 box, unit counts, shared-cell unit membership for every non-classic
 layout), HintEngine (every implemented technique through Swordfish,
 difficulty rating), GameController (input, notes and their
-legality/preservation rules, undo/redo, hints, auto-solve-singles,
-auto-notes, autosave/resume, puzzle prewarming, leaderboard recording),
+legality/preservation rules, undo/redo, hints, auto-solve-singles
+(including its note handling), auto-notes, autosave/resume, puzzle prewarming, leaderboard recording),
 LeaderboardService (ranking and
 per-difficulty-and-layout cap), Settings/GameState (defaults, JSON
 round-trips), the localized hint-text and label helpers, and widget tests
