@@ -163,11 +163,11 @@ class _Header extends StatelessWidget {
           width: 84,
           height: 84,
           decoration: BoxDecoration(
-            gradient: HomePalette.accentGradient,
+            color: HomePalette.accent,
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: HomePalette.gradientEnd.withValues(alpha: 0.35),
+                color: HomePalette.accent.withValues(alpha: 0.35),
                 blurRadius: 24,
                 offset: const Offset(0, 10),
               ),
@@ -181,15 +181,6 @@ class _Header extends StatelessWidget {
           style: TextStyle(fontSize: 38, fontWeight: FontWeight.w800, color: HomePalette.primaryText),
         ),
         const SizedBox(height: 6),
-        const Text(
-          'LOGIC · FOCUS · RELAX',
-          style: TextStyle(
-            fontSize: 12,
-            letterSpacing: 3,
-            fontWeight: FontWeight.w600,
-            color: HomePalette.mutedText,
-          ),
-        ),
         const SizedBox(height: 28),
       ],
     );
@@ -210,7 +201,7 @@ class _ResumeButton extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 4),
       child: DecoratedBox(
         decoration: BoxDecoration(
-          gradient: HomePalette.accentGradient,
+          color: HomePalette.accent,
           borderRadius: BorderRadius.circular(999),
         ),
         child: Material(
@@ -254,7 +245,7 @@ class _SectionLabel extends StatelessWidget {
 
 /// The "Spielmodus" pill-segmented control: one bordered outer pill holding
 /// all [BoardLayout] options, the selected one filled with the accent
-/// gradient and shown with a check mark instead of its own icon.
+/// color and shown with a check mark instead of its own icon.
 class _LayoutSelector extends StatelessWidget {
   final BoardLayout selected;
   final bool enabled;
@@ -315,7 +306,7 @@ class _PillSegment extends StatelessWidget {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
-          gradient: isSelected ? HomePalette.accentGradient : null,
+          color: isSelected ? HomePalette.accent : null,
           borderRadius: BorderRadius.circular(999),
         ),
         child: Column(
@@ -341,7 +332,7 @@ class _PillSegment extends StatelessWidget {
 }
 
 /// The "Schwierigkeit" row: one independently-bordered pill per
-/// [Difficulty], the selected one filled with the accent gradient.
+/// [Difficulty], the selected one filled with the accent color.
 class _DifficultySelector extends StatelessWidget {
   final Difficulty selected;
   final bool enabled;
@@ -391,7 +382,7 @@ class _DifficultyPill extends StatelessWidget {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
         decoration: BoxDecoration(
-          gradient: isSelected ? HomePalette.accentGradient : null,
+          color: isSelected ? HomePalette.accent : null,
           border: isSelected ? null : Border.all(color: HomePalette.border),
           borderRadius: BorderRadius.circular(999),
         ),

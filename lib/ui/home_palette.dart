@@ -16,11 +16,5 @@ class HomePalette {
   static const mutedText = Color(0xFF8A8AA3);
   static const gold = Color(0xFFFFC940);
 
-  static const gradientStart = Color(0xFF5B6EF5);
-  static const gradientEnd = Color(0xFF9B5CF6);
-  static const accentGradient = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [gradientStart, gradientEnd],
-  );
+  static const accent = Color(0xFF3D7EF5);
 }
