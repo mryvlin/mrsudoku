@@ -135,11 +135,16 @@ class SudokuBoardWidget extends StatelessWidget {
         valueWeight: isHighlightedValue
             ? FontWeight.w800
             : (cell.isGiven ? FontWeight.w700 : FontWeight.w500),
-        isThickLeft:
-            col > 0 && _isBoxBoundary(col) && !shape.activeCells.contains((row, col - 1)),
-        isThickTop: row > 0 && _isBoxBoundary(row) && !shape.activeCells.contains((row - 1, col)),
-        isThickRight: col + 1 < shape.width && _isBoxBoundary(col + 1),
-        isThickBottom: row + 1 < shape.height && _isBoxBoundary(row + 1),
+        // The outline of the playable area is thick on every side: an edge
+        // with no active neighbor (including the board's own edge) is an
+        // outer edge. Interior box boundaries are drawn by the cell on
+        // their right/bottom side only.
+        isThickLeft: !shape.activeCells.contains((row, col - 1)),
+        isThickTop: !shape.activeCells.contains((row - 1, col)),
+        isThickRight: !shape.activeCells.contains((row, col + 1)) ||
+            (col + 1 < shape.width && _isBoxBoundary(col + 1)),
+        isThickBottom: !shape.activeCells.contains((row + 1, col)) ||
+            (row + 1 < shape.height && _isBoxBoundary(row + 1)),
       );
     }
     return visuals;
@@ -156,37 +161,32 @@ class SudokuBoardWidget extends StatelessWidget {
 
     return AspectRatio(
       aspectRatio: shape.width / shape.height,
-      child: Container(
-        decoration: BoxDecoration(
-          border: Border.all(color: theme.colorScheme.outline, width: 2),
-        ),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final cellSize = constraints.maxWidth / shape.width;
-            return GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapUp: (details) {
-                final col = (details.localPosition.dx / cellSize).floor();
-                final row = (details.localPosition.dy / cellSize).floor();
-                if (shape.activeCells.contains((row, col))) onCellTap(row, col);
-              },
-              child: CustomPaint(
-                size: constraints.biggest,
-                painter: _BoardPainter(
-                  visuals: visuals,
-                  cellSize: cellSize,
-                  thinBorderColor: theme.colorScheme.outlineVariant,
-                  thickBorderColor: theme.colorScheme.outline,
-                  valueStyle: theme.textTheme.headlineSmall ?? const TextStyle(),
-                  noteStyle: theme.textTheme.labelSmall ?? const TextStyle(),
-                  noteColor: theme.colorScheme.onSurfaceVariant,
-                  highlightColor: resolvedHighlight,
-                  highlightedValue: highlightedValue,
-                ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final cellSize = constraints.maxWidth / shape.width;
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapUp: (details) {
+              final col = (details.localPosition.dx / cellSize).floor();
+              final row = (details.localPosition.dy / cellSize).floor();
+              if (shape.activeCells.contains((row, col))) onCellTap(row, col);
+            },
+            child: CustomPaint(
+              size: constraints.biggest,
+              painter: _BoardPainter(
+                visuals: visuals,
+                cellSize: cellSize,
+                thinBorderColor: theme.colorScheme.outlineVariant,
+                thickBorderColor: theme.colorScheme.outline,
+                valueStyle: theme.textTheme.headlineSmall ?? const TextStyle(),
+                noteStyle: theme.textTheme.labelSmall ?? const TextStyle(),
+                noteColor: theme.colorScheme.onSurfaceVariant,
+                highlightColor: resolvedHighlight,
+                highlightedValue: highlightedValue,
               ),
-            );
-          },
-        ),
+            ),
+          );
+        },
       ),
     );
   }
