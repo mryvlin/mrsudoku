@@ -239,6 +239,9 @@ class GameController extends Notifier<GameState?> {
       state = _withHistory(s, newBoard);
       _sound.tap();
       _schedulePersist();
+      // Removing a note can leave the cell with a single remaining
+      // candidate (see _firstNakedSingle), so let auto-solve pick it up.
+      _runAutoSolveCascade();
       return;
     }
 
@@ -463,7 +466,8 @@ class GameController extends Notifier<GameState?> {
   /// appear one at a time instead of all at once.
   static const _autoSolveStepDelay = Duration(milliseconds: 50);
 
-  /// True while a cascade (started by [inputNumber], [confirmHint] or
+  /// True while a cascade (started by [inputNumber] - a placement or a note
+  /// change - [confirmHint] or
   /// [toggleAutoSolveSingles]) is already stepping through
   /// [_autoSolveStepDelay]-spaced placements, so a second trigger firing
   /// mid-cascade doesn't start an overlapping one - the already-running
@@ -472,7 +476,7 @@ class GameController extends Notifier<GameState?> {
   bool _autoSolveRunning = false;
 
   /// If [GameState.autoSolveSingles] is on, fills in cells left with
-  /// exactly one legal candidate (a "naked single") one at a time,
+  /// exactly one candidate (a "naked single" - see [_firstNakedSingle]) one at a time,
   /// [_autoSolveStepDelay] apart, until none remain. Stops early - without
   /// pushing an undo entry of its own, so whatever the triggering action
   /// already recorded is the only one - if a wrong entry blocks further
@@ -520,12 +524,19 @@ class GameController extends Notifier<GameState?> {
     }
   }
 
-  /// The first empty cell with exactly one legal candidate, if any - see
-  /// `Candidates.forCell` for why non-empty cells must be filtered out here.
+  /// The first empty cell with exactly one remaining candidate, if any -
+  /// see `Candidates.forCell` for why non-empty cells must be filtered out
+  /// here. If the player has pencilled notes into a cell, digits they've
+  /// struck from those notes count as eliminated too, so a single left by
+  /// the player's own deductions (e.g. a naked pair they've noted) is
+  /// found, not just one forced by placed digits alone. A cell with no
+  /// notes falls back to its legal candidates.
   (int, int, int)? _firstNakedSingle(Board board) {
     for (final (r, c) in board.shape.activeCells) {
-      if (!board.cellAt(r, c).isEmpty) continue;
-      final candidates = Candidates.forCell(board, r, c);
+      final cell = board.cellAt(r, c);
+      if (!cell.isEmpty) continue;
+      final legal = Candidates.forCell(board, r, c);
+      final candidates = cell.notes.isEmpty ? legal : legal.intersection(cell.notes);
       if (candidates.length == 1) return (r, c, candidates.first);
     }
     return null;

@@ -522,6 +522,22 @@ void main() {
       expect(state().board.cellAt(0, 8).value, 0);
     });
 
+    test('removing a note that leaves a single remaining candidate auto-fills it', () async {
+      controller.restore(twoCellFixture(autoSolveSingles: true));
+      controller.selectCell(0, 8);
+      controller.toggleNotesMode();
+      controller.inputNumber(1);
+      controller.inputNumber(2); // notes {1, 2}: still two candidates
+      await waitForAutoSolve();
+      expect(state().board.cellAt(0, 8).value, 0);
+
+      controller.inputNumber(1); // strike 1 -> only 2 is left
+      await waitForAutoSolve();
+
+      expect(state().board.cellAt(0, 8).value, 2);
+      expect(state().mistakes, 0);
+    });
+
     test('toggling off again stops future moves from auto-filling', () {
       controller.restore(twoCellFixture(autoSolveSingles: true));
       controller.toggleAutoSolveSingles();
