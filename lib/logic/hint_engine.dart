@@ -34,11 +34,43 @@ enum SingleKind { naked, hidden }
 /// to name the unit (its 1-based index is fully derivable from row/col).
 enum HintUnitType { row, column, box }
 
-/// One logically derived step: place [value] at (row, col) because of
-/// [technique]. This is deliberately just structured data with no
-/// human-readable text - see `ui/hint_text.dart` for the localized
-/// explanation, since text/localization doesn't belong in this pure-Dart
-/// logic layer.
+/// What a [HintStep] asks the player to do: place a digit, only cross
+/// candidates out of the notes (an elimination technique, whose payoff is a
+/// later single rather than a placement of its own), or correct a mistake
+/// - a wrong entry ([fixValue]) or notes that have lost the cell's true
+/// digit ([fixNotes]) - which has to be dealt with before logic can go on.
+enum HintKind { place, eliminate, fixValue, fixNotes }
+
+/// The concrete pattern behind an elimination step. Finer-grained than
+/// [SolvingTechnique], whose `pairElimination` tier covers two different
+/// patterns that read very differently to a player.
+enum EliminationPattern { nakedPair, pointing, hiddenPair, nakedTriple, xWing, xyWing, swordfish }
+
+extension EliminationPatternX on EliminationPattern {
+  SolvingTechnique get technique => switch (this) {
+        EliminationPattern.nakedPair || EliminationPattern.pointing => SolvingTechnique.pairElimination,
+        EliminationPattern.hiddenPair => SolvingTechnique.hiddenPair,
+        EliminationPattern.nakedTriple => SolvingTechnique.nakedTriple,
+        EliminationPattern.xWing => SolvingTechnique.xWing,
+        EliminationPattern.xyWing => SolvingTechnique.xyWing,
+        EliminationPattern.swordfish => SolvingTechnique.swordfish,
+      };
+}
+
+/// A candidate to cross out: (row, col, digit).
+typedef Removal = (int, int, int);
+
+/// One logically derived step. A [HintKind.place] step says: place [value]
+/// at (row, col) because of [technique]. A [HintKind.eliminate] step (see
+/// [HintStep.elimination]) says: [pattern] lets the player cross out
+/// [removals] - it places nothing, and [value] is 0. This is deliberately
+/// just structured data with no human-readable text - see `ui/hint_text.dart`
+/// for the localized explanation, since text/localization doesn't belong in
+/// this pure-Dart logic layer.
+///
+/// [regionCells], [evidenceCells] and [evidenceDigits] feed the tiered hint
+/// display: the region is the "look around here" area, the evidence is the
+/// cells (and digits) that actually form the pattern.
 class HintStep {
   final int row;
   final int col;
@@ -46,6 +78,12 @@ class HintStep {
   final SolvingTechnique technique;
   final SingleKind singleKind;
   final HintUnitType? hiddenUnit;
+  final HintKind kind;
+  final EliminationPattern? pattern;
+  final List<(int, int)> regionCells;
+  final List<(int, int)> evidenceCells;
+  final Set<int> evidenceDigits;
+  final List<Removal> removals;
 
   const HintStep({
     required this.row,
@@ -54,11 +92,60 @@ class HintStep {
     required this.technique,
     this.singleKind = SingleKind.naked,
     this.hiddenUnit,
-  }) : assert(
+    this.regionCells = const [],
+  })  : kind = HintKind.place,
+        pattern = null,
+        evidenceCells = const [],
+        evidenceDigits = const {},
+        removals = const [],
+        assert(
           (singleKind == SingleKind.hidden) == (hiddenUnit != null),
           'hiddenUnit must be set if and only if singleKind is hidden - '
           'ui/hint_text.dart force-unwraps it whenever singleKind is hidden',
         );
+
+  /// An elimination-only step. (row, col) is the first cell losing a
+  /// candidate, just so every step has a position.
+  HintStep.elimination({
+    required EliminationPattern this.pattern,
+    required this.removals,
+    required this.evidenceCells,
+    required this.evidenceDigits,
+    required this.regionCells,
+  })  : assert(removals.isNotEmpty),
+        kind = HintKind.eliminate,
+        row = removals.first.$1,
+        col = removals.first.$2,
+        value = 0,
+        technique = pattern.technique,
+        singleKind = SingleKind.naked,
+        hiddenUnit = null;
+
+  /// A mistake to correct at (row, col): [HintKind.fixValue] for a wrong
+  /// entry, [HintKind.fixNotes] for notes missing the cell's true digit.
+  /// [technique] is only a placeholder - there is no solving technique
+  /// behind it, and `ui/hint_text.dart` switches on [kind] first.
+  HintStep.fix({
+    required this.kind,
+    required this.row,
+    required this.col,
+    this.regionCells = const [],
+  })  : assert(kind == HintKind.fixValue || kind == HintKind.fixNotes),
+        value = 0,
+        technique = SolvingTechnique.nakedSingle,
+        singleKind = SingleKind.naked,
+        hiddenUnit = null,
+        pattern = null,
+        evidenceCells = const [],
+        evidenceDigits = const {},
+        removals = const [];
+
+  /// Whether the tiered display (nudge, explanation, answer) applies. The
+  /// direct-reveal fallback has no logic to walk through.
+  bool get hasStages => technique != SolvingTechnique.backtracking;
+
+  /// Every cell that loses a candidate - for tinting on the board.
+  Set<(int, int)> get removalCells => {for (final (r, c, _) in removals) (r, c)};
 }
 
 /// Logical (non-brute-force) solving engine. Powers both the in-game hint
@@ -144,20 +231,132 @@ class HintEngine {
     return null;
   }
 
-  static HintStep? _findNakedSingle(Board board, {List<List<Set<int>>>? candidates}) {
-    final cands = candidates ?? Candidates.forBoard(board);
-    for (final (r, c) in board.shape.activeCells) {
-      if (!board.cellAt(r, c).isEmpty) continue;
-      final options = cands[r][c];
-      if (options.length == 1) {
-        return HintStep(row: r, col: c, value: options.first, technique: SolvingTechnique.nakedSingle);
+  /// The next hint for the player: the same ladder as [nextLogicalStep], but
+  /// built for teaching instead of rating. A single, if there is one, is
+  /// returned as a placement; otherwise the first elimination pattern that
+  /// would change [candidates] is returned as an elimination-only step -
+  /// *not* followed through to the placement it eventually unlocks, so the
+  /// player sees (and can apply to their notes) one reasoning step at a
+  /// time. Once those eliminations are reflected in [candidates], the next
+  /// call moves on, so repeated hints always make progress.
+  ///
+  /// [candidates] is what the player is assumed to already know (their
+  /// notes, see `GameController`); it defaults to every legal candidate. It
+  /// is never modified.
+  ///
+  /// [near] makes a single close to that cell win over a farther one, so a
+  /// hint tends to stay where the player is looking. [onlyCell] restricts
+  /// the hint to that cell: its own single, or an elimination that involves
+  /// it. Returns `null` if nothing (matching) applies.
+  static HintStep? nextHint(
+    Board board, {
+    List<List<Set<int>>>? candidates,
+    (int, int)? near,
+    (int, int)? onlyCell,
+  }) {
+    final base = candidates ?? Candidates.forBoard(board);
+    List<List<Set<int>>> fresh() => [
+          for (final row in base) [for (final cell in row) {...cell}],
+        ];
+
+    final naked = _nakedSingles(board, base);
+    final hidden = _hiddenSingles(board, base);
+    final HintStep? single;
+    if (onlyCell != null) {
+      single = [...naked, ...hidden].where((step) => (step.row, step.col) == onlyCell).firstOrNull;
+    } else if (near == null) {
+      single = naked.firstOrNull ?? hidden.firstOrNull;
+    } else {
+      // Nearest wins; on a tie, the earlier one (naked before hidden).
+      HintStep? best;
+      var bestDistance = 1 << 30;
+      for (final step in [...naked, ...hidden]) {
+        final distance = (step.row - near.$1).abs() + (step.col - near.$2).abs();
+        if (distance < bestDistance) {
+          best = step;
+          bestDistance = distance;
+        }
+      }
+      single = best;
+    }
+    if (single != null) return single;
+
+    final units = board.shape.units;
+    for (final tier in _eliminationTiers) {
+      // Each tier works on its own copy of what the player knows: a step
+      // must hold for their notes as they are, not as an earlier tier would
+      // have left them.
+      final cands = fresh();
+      final found = <HintStep>[];
+      switch (tier) {
+        case SolvingTechnique.pairElimination:
+          _applyPairElimination(board, cands, units, onStep: found.add);
+        case SolvingTechnique.hiddenPair:
+          _applyHiddenPairs(board, cands, units, onStep: found.add);
+        case SolvingTechnique.nakedTriple:
+          _applyNakedTriples(board, cands, units, onStep: found.add);
+        case SolvingTechnique.xWing:
+          _applyXWing(board, cands, units, onStep: found.add);
+        case SolvingTechnique.xyWing:
+          _applyXYWing(board, cands, onStep: found.add);
+        case SolvingTechnique.swordfish:
+          _applySwordfish(board, cands, units, onStep: found.add);
+        default:
+          break;
+      }
+      if (found.isEmpty) continue;
+      // Only the first event of a pass is guaranteed to hold for the
+      // player's notes as they stand: later ones were found after the
+      // earlier ones' removals, which the player hasn't made yet.
+      final first = found.first;
+      if (onlyCell == null ||
+          first.evidenceCells.contains(onlyCell) ||
+          first.removalCells.contains(onlyCell)) {
+        return first;
       }
     }
     return null;
   }
 
-  static HintStep? _findHiddenSingle(Board board, {List<List<Set<int>>>? candidates}) {
-    final cands = candidates ?? Candidates.forBoard(board);
+  /// Appends to [out] every candidate [digits] actually present in the
+  /// cell at [pos] and removes them; returns whether any was.
+  static bool _strip(List<List<Set<int>>> cands, (int, int) pos, Iterable<int> digits, List<Removal> out) {
+    var changed = false;
+    for (final digit in digits.toList()) {
+      if (cands[pos.$1][pos.$2].remove(digit)) {
+        out.add((pos.$1, pos.$2, digit));
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  static HintStep? _findNakedSingle(Board board, {List<List<Set<int>>>? candidates}) =>
+      _nakedSingles(board, candidates ?? Candidates.forBoard(board)).firstOrNull;
+
+  static HintStep? _findHiddenSingle(Board board, {List<List<Set<int>>>? candidates}) =>
+      _hiddenSingles(board, candidates ?? Candidates.forBoard(board)).firstOrNull;
+
+  /// Every naked single, lazily - callers that only want the first never pay
+  /// for the rest.
+  static Iterable<HintStep> _nakedSingles(Board board, List<List<Set<int>>> cands) sync* {
+    for (final (r, c) in board.shape.activeCells) {
+      if (!board.cellAt(r, c).isEmpty) continue;
+      final options = cands[r][c];
+      if (options.length == 1) {
+        yield HintStep(
+          row: r,
+          col: c,
+          value: options.first,
+          technique: SolvingTechnique.nakedSingle,
+          regionCells: board.unitsContaining(r, c).firstWhere((u) => u.kind == UnitKind.box).cells,
+        );
+      }
+    }
+  }
+
+  /// Every hidden single, lazily (see [_nakedSingles]).
+  static Iterable<HintStep> _hiddenSingles(Board board, List<List<Set<int>>> cands) sync* {
     final unitType = {
       UnitKind.row: HintUnitType.row,
       UnitKind.column: HintUnitType.column,
@@ -171,18 +370,18 @@ class HintEngine {
             .toList();
         if (cellsWithValue.length == 1) {
           final (r, c) = cellsWithValue.first;
-          return HintStep(
+          yield HintStep(
             row: r,
             col: c,
             value: value,
             technique: SolvingTechnique.hiddenSingle,
             singleKind: SingleKind.hidden,
             hiddenUnit: unitType[unit.kind],
+            regionCells: unit.cells,
           );
         }
       }
     }
-    return null;
   }
 
   /// Naked pairs (two cells in a unit sharing exactly the same 2
@@ -193,7 +392,12 @@ class HintEngine {
   /// row/column units through that same box) and a value's candidates
   /// within one of the units all fall inside the shared cells, that value
   /// can be removed from the other unit's remaining cells.
-  static bool _applyPairElimination(Board board, List<List<Set<int>>> cands, List<Unit> units) {
+  static bool _applyPairElimination(
+    Board board,
+    List<List<Set<int>>> cands,
+    List<Unit> units, {
+    void Function(HintStep)? onStep,
+  }) {
     var changed = false;
 
     for (final unit in units) {
@@ -205,12 +409,20 @@ class HintEngine {
           final (r2, c2) = emptyCells[j];
           if (cands[r2][c2].length != 2) continue;
           if (!_setEquals(cands[r1][c1], cands[r2][c2])) continue;
-          final pairValues = cands[r1][c1];
+          final pairValues = {...cands[r1][c1]};
+          final removals = <Removal>[];
           for (final pos in emptyCells) {
             if (pos == (r1, c1) || pos == (r2, c2)) continue;
-            final before = cands[pos.$1][pos.$2].length;
-            cands[pos.$1][pos.$2].removeAll(pairValues);
-            if (cands[pos.$1][pos.$2].length != before) changed = true;
+            if (_strip(cands, pos, pairValues, removals)) changed = true;
+          }
+          if (removals.isNotEmpty) {
+            onStep?.call(HintStep.elimination(
+              pattern: EliminationPattern.nakedPair,
+              removals: removals,
+              evidenceCells: [(r1, c1), (r2, c2)],
+              evidenceDigits: pairValues,
+              regionCells: unit.cells,
+            ));
           }
         }
       }
@@ -221,13 +433,24 @@ class HintEngine {
 
       for (var value = 1; value <= kBoardSize; value++) {
         final aCellsWithValue = unitA.cells
-            .where((pos) => board.cellAt(pos.$1, pos.$2).isEmpty && cands[pos.$1][pos.$2].contains(value));
+            .where((pos) => board.cellAt(pos.$1, pos.$2).isEmpty && cands[pos.$1][pos.$2].contains(value))
+            .toList();
         if (aCellsWithValue.isEmpty) continue;
         if (!aCellsWithValue.every(sharedCells.contains)) continue;
 
+        final removals = <Removal>[];
         for (final pos in unitB.cells) {
           if (sharedCells.contains(pos)) continue;
-          if (board.cellAt(pos.$1, pos.$2).isEmpty && cands[pos.$1][pos.$2].remove(value)) changed = true;
+          if (board.cellAt(pos.$1, pos.$2).isEmpty && _strip(cands, pos, [value], removals)) changed = true;
+        }
+        if (removals.isNotEmpty) {
+          onStep?.call(HintStep.elimination(
+            pattern: EliminationPattern.pointing,
+            removals: removals,
+            evidenceCells: aCellsWithValue,
+            evidenceDigits: {value},
+            regionCells: [...unitA.cells, ...unitB.cells],
+          ));
         }
       }
     }
@@ -237,7 +460,12 @@ class HintEngine {
 
   /// Hidden pairs: two values in a unit are only ever candidates in the same
   /// two cells -> every other candidate can be stripped from those cells.
-  static bool _applyHiddenPairs(Board board, List<List<Set<int>>> cands, List<Unit> units) {
+  static bool _applyHiddenPairs(
+    Board board,
+    List<List<Set<int>>> cands,
+    List<Unit> units, {
+    void Function(HintStep)? onStep,
+  }) {
     var changed = false;
     for (final unit in units) {
       final emptyCells = unit.cells.where((pos) => board.cellAt(pos.$1, pos.$2).isEmpty).toList();
@@ -247,10 +475,19 @@ class HintEngine {
         for (var v2 = v1 + 1; v2 <= kBoardSize; v2++) {
           final cellsV2 = emptyCells.where((p) => cands[p.$1][p.$2].contains(v2)).toList();
           if (cellsV2.length != 2 || !_samePositions(cellsV1, cellsV2)) continue;
+          final removals = <Removal>[];
           for (final pos in cellsV1) {
-            final before = cands[pos.$1][pos.$2].length;
-            cands[pos.$1][pos.$2].removeWhere((v) => v != v1 && v != v2);
-            if (cands[pos.$1][pos.$2].length != before) changed = true;
+            final others = cands[pos.$1][pos.$2].where((v) => v != v1 && v != v2);
+            if (_strip(cands, pos, others, removals)) changed = true;
+          }
+          if (removals.isNotEmpty) {
+            onStep?.call(HintStep.elimination(
+              pattern: EliminationPattern.hiddenPair,
+              removals: removals,
+              evidenceCells: cellsV1,
+              evidenceDigits: {v1, v2},
+              regionCells: unit.cells,
+            ));
           }
         }
       }
@@ -262,7 +499,12 @@ class HintEngine {
   /// exactly 3 values -> those values can be removed from every other cell
   /// in the unit (each of the three cells may itself hold only 2 or 3 of
   /// them, not necessarily all 3).
-  static bool _applyNakedTriples(Board board, List<List<Set<int>>> cands, List<Unit> units) {
+  static bool _applyNakedTriples(
+    Board board,
+    List<List<Set<int>>> cands,
+    List<Unit> units, {
+    void Function(HintStep)? onStep,
+  }) {
     var changed = false;
     for (final unit in units) {
       final emptyCells = unit.cells.where((pos) => board.cellAt(pos.$1, pos.$2).isEmpty).toList();
@@ -277,11 +519,19 @@ class HintEngine {
             final a = candidateCells[i], b = candidateCells[j], c = candidateCells[k];
             final union = <int>{...cands[a.$1][a.$2], ...cands[b.$1][b.$2], ...cands[c.$1][c.$2]};
             if (union.length != 3) continue;
+            final removals = <Removal>[];
             for (final pos in emptyCells) {
               if (pos == a || pos == b || pos == c) continue;
-              final before = cands[pos.$1][pos.$2].length;
-              cands[pos.$1][pos.$2].removeAll(union);
-              if (cands[pos.$1][pos.$2].length != before) changed = true;
+              if (_strip(cands, pos, union, removals)) changed = true;
+            }
+            if (removals.isNotEmpty) {
+              onStep?.call(HintStep.elimination(
+                pattern: EliminationPattern.nakedTriple,
+                removals: removals,
+                evidenceCells: [a, b, c],
+                evidenceDigits: union,
+                regionCells: unit.cells,
+              ));
             }
           }
         }
@@ -295,13 +545,18 @@ class HintEngine {
   /// removed from the rest of those columns in every other row of that
   /// grid (and symmetrically for two columns confining a value to the same
   /// two rows).
-  static bool _applyXWing(Board board, List<List<Set<int>>> cands, List<Unit> units) {
+  static bool _applyXWing(
+    Board board,
+    List<List<Set<int>>> cands,
+    List<Unit> units, {
+    void Function(HintStep)? onStep,
+  }) {
     var changed = false;
     for (final gridId in _gridIds(units)) {
       final rows = units.where((u) => u.kind == UnitKind.row && u.gridId == gridId).toList();
       final cols = units.where((u) => u.kind == UnitKind.column && u.gridId == gridId).toList();
-      changed |= _applyFishForGrid(board, cands, primary: rows, secondary: cols, size: 2);
-      changed |= _applyFishForGrid(board, cands, primary: cols, secondary: rows, size: 2);
+      changed |= _applyFishForGrid(board, cands, primary: rows, secondary: cols, size: 2, onStep: onStep);
+      changed |= _applyFishForGrid(board, cands, primary: cols, secondary: rows, size: 2, onStep: onStep);
     }
     return changed;
   }
@@ -310,13 +565,18 @@ class HintEngine {
   /// of the same grid - if a value's candidates across three rows are
   /// confined to the same three columns overall, that value can be removed
   /// from the rest of those columns (and symmetrically for columns).
-  static bool _applySwordfish(Board board, List<List<Set<int>>> cands, List<Unit> units) {
+  static bool _applySwordfish(
+    Board board,
+    List<List<Set<int>>> cands,
+    List<Unit> units, {
+    void Function(HintStep)? onStep,
+  }) {
     var changed = false;
     for (final gridId in _gridIds(units)) {
       final rows = units.where((u) => u.kind == UnitKind.row && u.gridId == gridId).toList();
       final cols = units.where((u) => u.kind == UnitKind.column && u.gridId == gridId).toList();
-      changed |= _applyFishForGrid(board, cands, primary: rows, secondary: cols, size: 3);
-      changed |= _applyFishForGrid(board, cands, primary: cols, secondary: rows, size: 3);
+      changed |= _applyFishForGrid(board, cands, primary: rows, secondary: cols, size: 3, onStep: onStep);
+      changed |= _applyFishForGrid(board, cands, primary: cols, secondary: rows, size: 3, onStep: onStep);
     }
     return changed;
   }
@@ -333,6 +593,7 @@ class HintEngine {
     required List<Unit> primary,
     required List<Unit> secondary,
     required int size,
+    void Function(HintStep)? onStep,
   }) {
     var changed = false;
     for (var value = 1; value <= kBoardSize; value++) {
@@ -358,11 +619,26 @@ class HintEngine {
             union.addAll(candidatesByPrimary[p]!);
           }
           if (union.length != size) return;
+          final evidence = [
+            for (final p in chosen)
+              for (final pos in p.cells)
+                if (board.cellAt(pos.$1, pos.$2).isEmpty && cands[pos.$1][pos.$2].contains(value)) pos,
+          ];
+          final removals = <Removal>[];
           for (final s in union) {
             for (final pos in s.cells) {
               if (chosen.any((p) => p.cells.contains(pos))) continue;
-              if (board.cellAt(pos.$1, pos.$2).isEmpty && cands[pos.$1][pos.$2].remove(value)) changed = true;
+              if (board.cellAt(pos.$1, pos.$2).isEmpty && _strip(cands, pos, [value], removals)) changed = true;
             }
+          }
+          if (removals.isNotEmpty) {
+            onStep?.call(HintStep.elimination(
+              pattern: size == 2 ? EliminationPattern.xWing : EliminationPattern.swordfish,
+              removals: removals,
+              evidenceCells: evidence,
+              evidenceDigits: {value},
+              regionCells: [for (final u in [...chosen, ...union]) ...u.cells],
+            ));
           }
           return;
         }
@@ -381,7 +657,11 @@ class HintEngine {
   /// b). Whichever pincer doesn't match the pivot's actual value still forces
   /// c into the other pincer, so c can be removed from every cell that sees
   /// both pincers (the pivot itself never holds c, so it's left alone).
-  static bool _applyXYWing(Board board, List<List<Set<int>>> cands) {
+  static bool _applyXYWing(
+    Board board,
+    List<List<Set<int>>> cands, {
+    void Function(HintStep)? onStep,
+  }) {
     var changed = false;
     final biValueCells = [
       for (final (r, c) in board.shape.activeCells)
@@ -408,12 +688,22 @@ class HintEngine {
           final yc = cands[y.$1][y.$2];
           if (yc.length != 2 || !yc.contains(b) || yc.contains(a) || !yc.contains(c)) continue;
 
+          final removals = <Removal>[];
           for (final pos in board.shape.activeCells) {
             if (pos == x || pos == y) continue;
             if (!board.cellAt(pos.$1, pos.$2).isEmpty) continue;
-            if (_sees(board, x, pos) && _sees(board, y, pos) && cands[pos.$1][pos.$2].remove(c)) {
+            if (_sees(board, x, pos) && _sees(board, y, pos) && _strip(cands, pos, [c], removals)) {
               changed = true;
             }
+          }
+          if (removals.isNotEmpty) {
+            onStep?.call(HintStep.elimination(
+              pattern: EliminationPattern.xyWing,
+              removals: removals,
+              evidenceCells: [pivot, x, y],
+              evidenceDigits: {a, b, c},
+              regionCells: [for (final u in board.unitsContaining(pivot.$1, pivot.$2)) ...u.cells],
+            ));
           }
         }
       }

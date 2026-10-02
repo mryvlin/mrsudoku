@@ -55,4 +55,22 @@ void main() {
   test('fromJson falls back to 5 max hints when missing', () {
     expect(Settings.fromJson(const {}).maxHints, 5);
   });
+
+  test('hint settings default to the standard style, whole-board hints', () {
+    expect(const Settings().hintStyle, HintStyle.standard);
+    expect(const Settings().hintSelectedCellOnly, isFalse);
+  });
+
+  test('toJson/fromJson round-trips the hint settings', () {
+    const settings = Settings(hintStyle: HintStyle.minimal, hintSelectedCellOnly: true);
+    final restored = Settings.fromJson(settings.toJson());
+    expect(restored.hintStyle, HintStyle.minimal);
+    expect(restored.hintSelectedCellOnly, isTrue);
+  });
+
+  test('fromJson falls back for older saves and unknown hint styles', () {
+    expect(Settings.fromJson(const {}).hintStyle, HintStyle.standard);
+    expect(Settings.fromJson(const {'hintStyle': 'nope'}).hintStyle, HintStyle.standard);
+    expect(Settings.fromJson(const {}).hintSelectedCellOnly, isFalse);
+  });
 }

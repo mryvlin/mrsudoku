@@ -137,11 +137,27 @@ test/
   starting another round at the same settings is instant.
 - Solver/hint engine covering Naked/Hidden Single, Naked Pair, Pointing
   Pair, Box-Line Reduction, Hidden Pair, Naked Triple, X-Wing, XY-Wing and
-  Swordfish. A hint shows the next logically derivable number with a short
-  explanation in a persistent banner (not a timed snackbar), and - for a
-  hidden single - narrows the board's highlight down to the exact
-  row/column/box that forced it, instead of just revealing the answer.
-  Number of hints per game is configurable (default 5).
+  Swordfish. Hints are tiered, so you only see as much as you ask for. A
+  panel above the toolbar walks through three stages: a nudge that tints the
+  area where the next step is, the technique with the cells that form it
+  marked, and the answer, which is only applied (and a hint spent) once you
+  take it. The first two stages are free, even with no hints left, and you
+  can go back or cancel at any stage; a hint is dropped if you change the
+  board while it is showing.
+  - When the next logical move is only a reasoning step - a naked pair,
+    X-Wing and the like - the hint is an elimination: the candidates it
+    rules out are drawn struck through, and taking it crosses them out of
+    your notes instead of placing a number.
+  - Hints respect your notes, so every hint moves on from the last one, and a
+    single close to the selected cell is preferred. A setting can restrict
+    hints to the selected cell.
+  - A wrong entry, or notes that have lost a cell's true digit, get their own
+    hint ("Mistake found" / "Check your notes") instead of blocking hints.
+  - An info button opens a technique guide with a schematic of the pattern
+    and the rule in plain words; a hint style setting (Beginner / Standard /
+    Minimal) controls how much is explained by default.
+  - The win dialog shows how many hints were used. Number of hints per game
+    is configurable (default 5).
 - Optional auto-solve: a toggle that automatically fills in any cell left
   with exactly one candidate after every move, one cell at a time. It
   respects your pencil marks: digits you've crossed out of a cell's notes
@@ -207,8 +223,10 @@ and reproducibility per difficulty level and per board layout), Validator
 (row/column/box conflicts, solved-state detection), PuzzleShape (bounding
 box, unit counts, shared-cell unit membership for every non-classic
 layout), HintEngine (every implemented technique through Swordfish,
-difficulty rating), GameController (input, notes and their
-legality/preservation rules, undo/redo, hints, auto-solve-singles
+difficulty rating, and the stepwise hint ladder: soundness of every
+elimination, convergence, use of the player's notes), GameController (input,
+notes and their legality/preservation rules, undo/redo, hints including
+elimination hints, auto-solve-singles
 (including its note handling), auto-notes, autosave/resume, puzzle prewarming, leaderboard recording),
 LeaderboardService (ranking and
 per-difficulty-and-layout cap), Settings/GameState (defaults, JSON

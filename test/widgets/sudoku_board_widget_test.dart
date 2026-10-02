@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mrsudoku/logic/hint_engine.dart';
 import 'package:mrsudoku/models/board.dart';
@@ -90,5 +91,46 @@ void main() {
           if (r != row || c != col) '$r-$c',
     };
     expect(highlighted, expected);
+  });
+
+  group('hint overlay', () {
+    // A naked pair in row 0: (0,0) and (0,1) both only {1, 2}, so 1 and 2
+    // can be crossed out of (0,2) - which has no notes of its own, so the
+    // struck-through digits are painted from the step alone.
+    final step = HintStep.elimination(
+      pattern: EliminationPattern.nakedPair,
+      removals: const [(0, 2, 1), (0, 2, 2)],
+      evidenceCells: const [(0, 0), (0, 1)],
+      evidenceDigits: const {1, 2},
+      regionCells: [for (var c = 0; c < 9; c++) (0, c)],
+    );
+
+    for (final stage in [1, 2, 3]) {
+      testWidgets('renders an elimination step at stage $stage without errors', (tester) async {
+        await tester.pumpWidget(MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 360,
+              height: 360,
+              child: SudokuBoardWidget(
+                board: Board.empty(),
+                solution: null,
+                selectedRow: null,
+                selectedCol: null,
+                highlightEnabled: true,
+                highlightColor: HighlightColor.red,
+                showErrors: false,
+                hintStep: step,
+                hintStage: stage,
+                onCellTap: (row, col) {},
+              ),
+            ),
+          ),
+        ));
+
+        expect(tester.takeException(), isNull);
+        expect(find.byType(SudokuBoardWidget), findsOneWidget);
+      });
+    }
   });
 }

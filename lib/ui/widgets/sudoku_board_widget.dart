@@ -33,6 +33,18 @@ class SudokuBoardWidget extends StatelessWidget {
   /// `null` for every other technique, where every unit matters.
   final HintUnitType? hintFocusUnit;
 
+  /// The hint being walked through, if any, and which stage of it is
+  /// showing (1 = nudge, 2 = explanation, 3 = answer). Stage 1 only tints
+  /// the step's region; from stage 2 on the cells forming the pattern are
+  /// marked too, and candidates the step would cross out are drawn struck
+  /// through (and their cells tinted) so the player can see what it does.
+  final HintStep? hintStep;
+  final int hintStage;
+
+  /// Soft amber used for hint tints - deliberately not the player's chosen
+  /// highlight color, so a hint never reads as a selection.
+  static const hintColor = Color(0xFFFFB300);
+
   const SudokuBoardWidget({
     super.key,
     required this.board,
@@ -44,6 +56,8 @@ class SudokuBoardWidget extends StatelessWidget {
     required this.showErrors,
     required this.onCellTap,
     this.hintFocusUnit,
+    this.hintStep,
+    this.hintStage = 1,
   });
 
   bool get _hasSelection => selectedRow != null && selectedCol != null;
@@ -93,6 +107,20 @@ class SudokuBoardWidget extends StatelessWidget {
     final highlightedValue = highlightEnabled ? selectedValue : 0;
     final visuals = <(int, int), _CellVisual>{};
 
+    final hint = hintStep;
+    final hintRegion = hint == null ? const <(int, int)>{} : hint.regionCells.toSet();
+    final showDetail = hint != null && hintStage >= 2;
+    final hintEvidence = showDetail ? hint.evidenceCells.toSet() : const <(int, int)>{};
+    final hintStrikes = <(int, int), Set<int>>{
+      if (showDetail)
+        for (final (r, c, _) in hint.removals) (r, c): {},
+    };
+    if (showDetail) {
+      for (final (r, c, digit) in hint.removals) {
+        hintStrikes[(r, c)]!.add(digit);
+      }
+    }
+
     for (final (row, col) in shape.activeCells) {
       final cell = board.cellAt(row, col);
       final isSelected = _hasSelection && row == selectedRow && col == selectedCol;
@@ -117,6 +145,20 @@ class SudokuBoardWidget extends StatelessWidget {
                       ? resolvedHighlight.withValues(alpha: 0.08)
                       : theme.colorScheme.surface;
 
+      var tintedBackground = background;
+      if (hintRegion.contains((row, col))) {
+        tintedBackground = Color.alphaBlend(
+          hintColor.withValues(alpha: hintStage == 1 ? 0.22 : 0.12),
+          tintedBackground,
+        );
+      }
+      if (hintStrikes.containsKey((row, col))) {
+        tintedBackground = Color.alphaBlend(theme.colorScheme.error.withValues(alpha: 0.16), tintedBackground);
+      }
+      if (hintEvidence.contains((row, col))) {
+        tintedBackground = Color.alphaBlend(hintColor.withValues(alpha: 0.55), tintedBackground);
+      }
+
       final valueColor = cell.isEmpty
           ? null
           : isError
@@ -130,7 +172,8 @@ class SudokuBoardWidget extends StatelessWidget {
       visuals[(row, col)] = _CellVisual(
         value: cell.value,
         notes: cell.notes,
-        background: background,
+        background: tintedBackground,
+        strikeDigits: hintStrikes[(row, col)] ?? const <int>{},
         valueColor: valueColor,
         valueWeight: isHighlightedValue
             ? FontWeight.w800
@@ -181,6 +224,7 @@ class SudokuBoardWidget extends StatelessWidget {
                 valueStyle: theme.textTheme.headlineSmall ?? const TextStyle(),
                 noteStyle: theme.textTheme.labelSmall ?? const TextStyle(),
                 noteColor: theme.colorScheme.onSurfaceVariant,
+                strikeColor: theme.colorScheme.error,
                 highlightColor: resolvedHighlight,
                 highlightedValue: highlightedValue,
               ),
@@ -199,6 +243,10 @@ class _CellVisual {
   final int value;
   final Set<int> notes;
   final Color background;
+
+  /// Candidates a hint would cross out of this cell - drawn struck through
+  /// in the note grid, whether or not the player had noted them.
+  final Set<int> strikeDigits;
   final Color? valueColor;
   final FontWeight valueWeight;
   final bool isThickLeft;
@@ -210,6 +258,7 @@ class _CellVisual {
     required this.value,
     required this.notes,
     required this.background,
+    required this.strikeDigits,
     required this.valueColor,
     required this.valueWeight,
     required this.isThickLeft,
@@ -227,6 +276,7 @@ class _BoardPainter extends CustomPainter {
   final TextStyle valueStyle;
   final TextStyle noteStyle;
   final Color noteColor;
+  final Color strikeColor;
   final Color highlightColor;
   final int highlightedValue;
 
@@ -238,6 +288,7 @@ class _BoardPainter extends CustomPainter {
     required this.valueStyle,
     required this.noteStyle,
     required this.noteColor,
+    required this.strikeColor,
     required this.highlightColor,
     required this.highlightedValue,
   });
@@ -290,21 +341,22 @@ class _BoardPainter extends CustomPainter {
             fontSize: cellSize * 0.6,
           ),
         );
-      } else if (visual.notes.isNotEmpty) {
-        _paintNotes(canvas, rect, visual.notes);
+      } else if (visual.notes.isNotEmpty || visual.strikeDigits.isNotEmpty) {
+        _paintNotes(canvas, rect, visual.notes, visual.strikeDigits);
       }
     }
   }
 
-  void _paintNotes(Canvas canvas, Rect rect, Set<int> notes) {
+  void _paintNotes(Canvas canvas, Rect rect, Set<int> notes, Set<int> struck) {
     final subSize = rect.width / 3;
-    for (final digit in notes) {
+    for (final digit in {...notes, ...struck}) {
       final localIndex = digit - 1;
       final center = Offset(
         rect.left + (localIndex % 3) * subSize + subSize / 2,
         rect.top + (localIndex ~/ 3) * subSize + subSize / 2,
       );
-      final isMatching = digit == highlightedValue;
+      final isStruck = struck.contains(digit);
+      final isMatching = !isStruck && digit == highlightedValue;
       if (isMatching) {
         final badge = RRect.fromRectAndRadius(
           Rect.fromCenter(center: center, width: subSize * 0.8, height: subSize * 0.72),
@@ -323,12 +375,27 @@ class _BoardPainter extends CustomPainter {
         '$digit',
         center,
         noteStyle.copyWith(
-          color: isMatching ? highlightColor : noteColor,
-          fontWeight: isMatching ? FontWeight.w800 : null,
+          color: isStruck
+              ? strikeColor
+              : isMatching
+                  ? highlightColor
+                  : noteColor,
+          fontWeight: isMatching || isStruck ? FontWeight.w800 : null,
           height: 1,
           fontSize: subSize * 0.6,
         ),
       );
+      if (isStruck) {
+        final half = subSize * 0.34;
+        canvas.drawLine(
+          center + Offset(-half, half),
+          center + Offset(half, -half),
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.4
+            ..color = strikeColor,
+        );
+      }
     }
   }
 

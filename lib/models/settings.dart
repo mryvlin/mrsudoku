@@ -13,6 +13,10 @@ enum AppLocale { system, de, en }
 /// of Flutter imports.
 enum HighlightColor { red, orange, green, blue, purple, teal }
 
+/// How much a hint explains: `beginner` always shows why a technique works,
+/// `standard` shows it on request, `minimal` shows only the technique's name.
+enum HintStyle { beginner, standard, minimal }
+
 /// Persisted user preferences (Einstellungsseite).
 class Settings {
   final bool errorLimitEnabled;
@@ -28,6 +32,12 @@ class Settings {
   final AppThemeMode themeMode;
   final AppLocale locale;
   final bool soundEnabled;
+  final HintStyle hintStyle;
+
+  /// With a cell selected, only give hints about that cell (see
+  /// `HintEngine.nextHint`'s `onlyCell`) instead of looking at the whole
+  /// board.
+  final bool hintSelectedCellOnly;
 
   const Settings({
     this.errorLimitEnabled = true,
@@ -39,6 +49,8 @@ class Settings {
     this.themeMode = AppThemeMode.system,
     this.locale = AppLocale.system,
     this.soundEnabled = true,
+    this.hintStyle = HintStyle.standard,
+    this.hintSelectedCellOnly = false,
   });
 
   Settings copyWith({
@@ -51,6 +63,8 @@ class Settings {
     AppThemeMode? themeMode,
     AppLocale? locale,
     bool? soundEnabled,
+    HintStyle? hintStyle,
+    bool? hintSelectedCellOnly,
   }) {
     return Settings(
       errorLimitEnabled: errorLimitEnabled ?? this.errorLimitEnabled,
@@ -62,6 +76,8 @@ class Settings {
       themeMode: themeMode ?? this.themeMode,
       locale: locale ?? this.locale,
       soundEnabled: soundEnabled ?? this.soundEnabled,
+      hintStyle: hintStyle ?? this.hintStyle,
+      hintSelectedCellOnly: hintSelectedCellOnly ?? this.hintSelectedCellOnly,
     );
   }
 
@@ -75,6 +91,8 @@ class Settings {
         'themeMode': themeMode.name,
         'locale': locale.name,
         'soundEnabled': soundEnabled,
+        'hintStyle': hintStyle.name,
+        'hintSelectedCellOnly': hintSelectedCellOnly,
       };
 
   factory Settings.fromJson(Map<String, dynamic> json) => Settings(
@@ -96,5 +114,10 @@ class Settings {
           orElse: () => AppLocale.system,
         ),
         soundEnabled: json['soundEnabled'] as bool? ?? true,
+        hintStyle: HintStyle.values.firstWhere(
+          (h) => h.name == json['hintStyle'],
+          orElse: () => HintStyle.standard,
+        ),
+        hintSelectedCellOnly: json['hintSelectedCellOnly'] as bool? ?? false,
       );
 }

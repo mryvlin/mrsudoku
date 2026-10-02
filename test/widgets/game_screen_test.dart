@@ -142,7 +142,7 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   });
 
-  testWidgets('a hint only highlights until "Got it" is tapped, which then places it', (tester) async {
+  testWidgets('a hint walks through nudge, explanation and answer, and only the answer places it', (tester) async {
     // The default 800x600 test surface is too short for the full game UI
     // plus the hint banner - the banner's action button ends up laid out
     // off-screen and untappable. Use a taller, phone-like viewport instead.
@@ -153,25 +153,108 @@ void main() {
 
     final container = await _startedContainer(tester);
     final filledBefore = _filledCellCount(container.read(gameControllerProvider)!.board);
+    final hintsBefore = container.read(gameControllerProvider)!.hintsRemaining;
+    final l10n = AppLocalizations.of(tester.element(find.byType(GameScreen)))!;
 
+    // Stage 1: a nudge. Nothing placed, nothing selected, nothing spent.
     await tester.tap(find.byKey(const ValueKey('toolbar-hint')));
     await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('hint-panel')), findsOneWidget);
+    expect(find.text(l10n.hintMore), findsOneWidget);
+    expect(container.read(gameControllerProvider)!.hasSelection, isFalse);
 
-    // Peeking alone must not have placed anything yet.
+    // Stage 2: the technique. The Hint button advances too, like "More help".
+    await tester.tap(find.byKey(const ValueKey('toolbar-hint')));
+    await tester.pumpAndSettle();
+    expect(find.text(l10n.hintShowAnswer), findsOneWidget);
     expect(_filledCellCount(container.read(gameControllerProvider)!.board), filledBefore);
-    expect(find.byType(MaterialBanner), findsOneWidget);
-    final hintsAfterPeek = container.read(gameControllerProvider)!.hintsRemaining;
 
-    final l10n = AppLocalizations.of(tester.element(find.byType(GameScreen)))!;
-    await tester.tap(find.text(l10n.hintDismiss));
+    // Stage 3: the answer, still not applied or charged for.
+    await tester.tap(find.text(l10n.hintShowAnswer));
+    await tester.pumpAndSettle();
+    expect(find.text(l10n.hintPlace), findsOneWidget);
+    expect(_filledCellCount(container.read(gameControllerProvider)!.board), filledBefore);
+    expect(container.read(gameControllerProvider)!.hintsRemaining, hintsBefore);
+
+    await tester.tap(find.text(l10n.hintPlace));
     await tester.pumpAndSettle();
 
-    expect(find.byType(MaterialBanner), findsNothing);
+    expect(find.byKey(const ValueKey('hint-panel')), findsNothing);
     expect(_filledCellCount(container.read(gameControllerProvider)!.board), filledBefore + 1);
-    expect(container.read(gameControllerProvider)!.hintsRemaining, hintsAfterPeek - 1);
+    expect(container.read(gameControllerProvider)!.hintsRemaining, hintsBefore - 1);
 
     // Flush the debounced autosave timer confirmHint scheduled, so the test
     // doesn't end with a pending Timer.
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('Back returns a hint to its nudge, and the technique guide is reachable from stage 2', (tester) async {
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await _startedContainer(tester);
+    final l10n = AppLocalizations.of(tester.element(find.byType(GameScreen)))!;
+
+    await tester.tap(find.byKey(const ValueKey('toolbar-hint')));
+    await tester.pumpAndSettle();
+    expect(find.text(l10n.hintStageLabel(1, 3)), findsOneWidget);
+
+    await tester.tap(find.text(l10n.hintMore));
+    await tester.pumpAndSettle();
+    expect(find.text(l10n.hintStageLabel(2, 3)), findsOneWidget);
+    expect(find.byKey(const ValueKey('hint-guide')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('hint-back')));
+    await tester.pumpAndSettle();
+    expect(find.text(l10n.hintStageLabel(1, 3)), findsOneWidget);
+    expect(find.byKey(const ValueKey('hint-guide')), findsNothing);
+
+    await tester.tap(find.text(l10n.hintCancel));
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('cancelling a hint spends nothing and leaves the board alone', (tester) async {
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final container = await _startedContainer(tester);
+    final before = container.read(gameControllerProvider)!;
+    final l10n = AppLocalizations.of(tester.element(find.byType(GameScreen)))!;
+
+    await tester.tap(find.byKey(const ValueKey('toolbar-hint')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(l10n.hintCancel));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('hint-panel')), findsNothing);
+    expect(container.read(gameControllerProvider)!.hintsRemaining, before.hintsRemaining);
+    expect(_filledCellCount(container.read(gameControllerProvider)!.board), _filledCellCount(before.board));
+  });
+
+  testWidgets('a hint is dropped when the player changes the board while it is showing', (tester) async {
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final container = await _startedContainer(tester);
+    await tester.tap(find.byKey(const ValueKey('toolbar-hint')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('hint-panel')), findsOneWidget);
+
+    final pos = _firstEmptyCell(container.read(gameControllerProvider)!);
+    container.read(gameControllerProvider.notifier).selectCell(pos.$1, pos.$2);
+    container.read(gameControllerProvider.notifier).inputNumber(
+          container.read(gameControllerProvider)!.solution.cellAt(pos.$1, pos.$2).value,
+        );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('hint-panel')), findsNothing);
+
     await tester.pump(const Duration(seconds: 1));
   });
 

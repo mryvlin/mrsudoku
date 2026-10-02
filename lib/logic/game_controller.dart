@@ -7,6 +7,7 @@ import '../models/board_layout.dart';
 import '../models/difficulty.dart';
 import '../models/game_state.dart';
 import '../models/leaderboard_entry.dart';
+import '../models/puzzle_shape.dart';
 import '../models/settings.dart';
 import '../services/game_persistence_service.dart';
 import '../services/puzzle_generation_service.dart';
@@ -339,58 +340,131 @@ class GameController extends Notifier<GameState?> {
     _schedulePersist();
   }
 
-  /// Computes the next logically derivable step (see [HintEngine]) and
-  /// selects its cell - so the board highlights it (see
-  /// `SudokuBoardWidget.hintFocusUnit` and `GameScreen`) - without placing
-  /// its value yet. The UI shows the step's explanation (`ui/hint_text.dart`)
-  /// and only calls [confirmHint] once the player acknowledges it (e.g. taps
-  /// "Got it"), so a hint teaches before it gives the answer away.
+  /// Selects (row, col) without the tap-again-to-deselect toggle of
+  /// [selectCell] - for the hint display, which reveals its target cell
+  /// only once the player asks for more than a nudge.
+  void focusCell(int row, int col) {
+    final s = state;
+    if (s == null || _locked(s)) return;
+    if (s.selectedRow == row && s.selectedCol == col) return;
+    state = s.copyWith(selectedRow: row, selectedCol: col);
+  }
+
+  /// What the player is taken to already know about each empty cell: its
+  /// legal candidates, narrowed to their notes where they've written some.
+  /// A cell's notes are only trusted if they still contain the cell's true
+  /// value - a note the player struck wrongly would otherwise steer hints
+  /// onto a false deduction (the same reason hints refuse to run while a
+  /// wrong entry is on the board, see [_hasWrongEntry]).
+  List<List<Set<int>>> _knownCandidates(GameState s) {
+    final known = Candidates.forBoard(s.board);
+    for (final (r, c) in s.board.shape.activeCells) {
+      final cell = s.board.cellAt(r, c);
+      if (!cell.isEmpty || cell.notes.isEmpty) continue;
+      if (!cell.notes.contains(s.solution.cellAt(r, c).value)) continue;
+      known[r][c] = known[r][c].intersection(cell.notes);
+    }
+    return known;
+  }
+
+  /// Computes the next hint (see [HintEngine.nextHint]) without changing the
+  /// board, the selection or the hint count. The UI walks the player
+  /// through it in stages (`GameScreen`): a nudge at the area, the
+  /// technique with its evidence cells, and finally the answer, and only
+  /// calls [confirmHint] once the player takes the answer - so a hint
+  /// teaches before it gives anything away. Looking at the first two stages
+  /// is free, which is why this works even with no hints left; only
+  /// [confirmHint] needs one.
   ///
-  /// Returns `null` if no hint could be given (no hints left, game
-  /// finished/paused, or a wrong entry needs clearing first - see
-  /// [_hasWrongEntry]). Doesn't consume a hint charge or touch the board by
-  /// itself - only [confirmHint] does that.
+  /// What comes back, in order of priority:
+  /// - a wrong entry on the board ([HintKind.fixValue]) - nothing logical
+  ///   can be trusted until it's gone, since the engine only sees digits,
+  ///   not whether they're right;
+  /// - notes that lost their cell's true digit ([HintKind.fixNotes]);
+  /// - the next logical step, derived from [_knownCandidates] so crossing
+  ///   candidates out by hand, or applying an earlier elimination hint,
+  ///   moves the next hint along: a placement or - when the next logical
+  ///   move is only a reasoning step like a naked pair - an elimination of
+  ///   candidates from the notes ([HintKind.eliminate]). A single close to
+  ///   the selected cell is preferred, and with
+  ///   [Settings.hintSelectedCellOnly] a selected cell restricts the hint
+  ///   to itself;
+  /// - failing that, a direct reveal of the first empty cell.
+  ///
+  /// Returns `null` if no hint could be given (game finished/paused, or
+  /// nothing matches the selected cell in selected-cell-only mode).
   HintStep? peekHint() {
     final s = state;
-    if (s == null || _locked(s) || s.hintsRemaining <= 0) return null;
-    // A wrong-but-not-rule-breaking entry (e.g. a digit that's correct
-    // nowhere else in its row/column/box but isn't what the unique solution
-    // needs here) still counts as "placed" for HintEngine's candidate
-    // computation, since HintEngine only sees the board, not the solution.
-    // That can corrupt deductions elsewhere - e.g. ruling out the correct
-    // digit for a peer cell - and produce a "confident" hint that
-    // contradicts the true solution. Refuse to hint until it's cleared.
-    if (_hasWrongEntry(s)) return null;
+    if (s == null || _locked(s)) return null;
 
-    final logicalStep = HintEngine.nextLogicalStep(s.board);
-    final HintStep step;
-    if (logicalStep != null) {
-      step = logicalStep;
-    } else {
-      final pos = _firstEmptyCell(s.board);
-      if (pos == null) return null;
-      // No implemented technique applies: reveal the solution directly.
-      // SolvingTechnique.backtracking marks this fallback for the UI.
-      step = HintStep(
-        row: pos.$1,
-        col: pos.$2,
-        value: s.solution.cellAt(pos.$1, pos.$2).value,
-        technique: SolvingTechnique.backtracking,
+    final wrong = _firstWrongEntry(s);
+    if (wrong != null) {
+      return HintStep.fix(
+        kind: HintKind.fixValue,
+        row: wrong.$1,
+        col: wrong.$2,
+        regionCells: _boxCells(s.board, wrong),
+      );
+    }
+    final badNotes = _firstCellWithWrongNotes(s);
+    if (badNotes != null) {
+      return HintStep.fix(
+        kind: HintKind.fixNotes,
+        row: badNotes.$1,
+        col: badNotes.$2,
+        regionCells: _boxCells(s.board, badNotes),
       );
     }
 
-    state = s.copyWith(selectedRow: step.row, selectedCol: step.col);
-    return step;
+    final selected = s.hasSelection ? (s.selectedRow!, s.selectedCol!) : null;
+    final onlySelected = selected != null &&
+        ref.read(settingsControllerProvider).hintSelectedCellOnly &&
+        s.board.cellAt(selected.$1, selected.$2).isEmpty;
+
+    final logicalStep = HintEngine.nextHint(
+      s.board,
+      candidates: _knownCandidates(s),
+      near: selected,
+      onlyCell: onlySelected ? selected : null,
+    );
+    if (logicalStep != null) return logicalStep;
+    if (onlySelected) return null;
+
+    final pos = _firstEmptyCell(s.board);
+    if (pos == null) return null;
+    // No implemented technique applies: reveal the solution directly.
+    // SolvingTechnique.backtracking marks this fallback for the UI.
+    return HintStep(
+      row: pos.$1,
+      col: pos.$2,
+      value: s.solution.cellAt(pos.$1, pos.$2).value,
+      technique: SolvingTechnique.backtracking,
+    );
   }
 
-  /// Places the value from a [step] previously returned by [peekHint], once
-  /// the player has acknowledged its explanation. A no-op if the target
-  /// cell is no longer empty - e.g. the player entered something else there
-  /// while the hint was still showing - so a stale hint can't silently
-  /// overwrite whatever they placed instead.
+  /// Applies a [step] previously returned by [peekHint], once the player has
+  /// taken its answer: places its value, or - for an elimination step -
+  /// crosses its candidates out of the notes. Spends one hint either way. A
+  /// no-op if the target cell is no longer empty (or, for an elimination,
+  /// if there is nothing left to cross out) - e.g. the player changed the
+  /// board while the hint was still showing - so a stale hint can't
+  /// silently overwrite whatever they did instead, or charge for nothing.
   void confirmHint(HintStep step) {
     final s = state;
-    if (s == null || _locked(s)) return;
+    if (s == null || _locked(s) || s.hintsRemaining <= 0) return;
+    switch (step.kind) {
+      case HintKind.eliminate:
+        _applyEliminations(s, step);
+        return;
+      case HintKind.fixValue:
+        _applyFixValue(s, step);
+        return;
+      case HintKind.fixNotes:
+        _applyFixNotes(s, step);
+        return;
+      case HintKind.place:
+        break;
+    }
     final cell = s.board.cellAt(step.row, step.col);
     if (!cell.isEmpty) return;
 
@@ -417,6 +491,61 @@ class GameController extends Notifier<GameState?> {
       _schedulePersist();
       _runAutoSolveCascade();
     }
+  }
+
+  /// Clears a wrong entry the hint pointed out. Its notes stay (see
+  /// [eraseSelected]); a no-op if the entry is no longer wrong.
+  void _applyFixValue(GameState s, HintStep step) {
+    final cell = s.board.cellAt(step.row, step.col);
+    if (cell.isGiven || cell.isEmpty || cell.value == s.solution.cellAt(step.row, step.col).value) return;
+    final newBoard = s.board.setCell(step.row, step.col, cell.copyWith(value: 0));
+    state = _withHistory(s, newBoard).copyWith(hintsUsed: s.hintsUsed + 1);
+    _sound.tap();
+    _schedulePersist();
+  }
+
+  /// Resets a cell's notes to its legal candidates after they lost its true
+  /// digit; a no-op if they've been fixed in the meantime.
+  void _applyFixNotes(GameState s, HintStep step) {
+    final cell = s.board.cellAt(step.row, step.col);
+    if (!cell.isEmpty || cell.notes.isEmpty || cell.notes.contains(s.solution.cellAt(step.row, step.col).value)) {
+      return;
+    }
+    final newBoard = s.board.setCell(
+      step.row,
+      step.col,
+      cell.copyWith(notes: Candidates.forCell(s.board, step.row, step.col)),
+    );
+    state = _withHistory(s, newBoard).copyWith(hintsUsed: s.hintsUsed + 1);
+    _sound.tap();
+    _schedulePersist();
+    _runAutoSolveCascade();
+  }
+
+  /// Crosses [step]'s candidates out of the notes of the cells they belong
+  /// to. A cell without notes gets its known candidates written out minus
+  /// the removed ones, so the elimination sticks (and the next hint moves
+  /// on) even though the player never noted that cell.
+  void _applyEliminations(GameState s, HintStep step) {
+    final known = _knownCandidates(s);
+    final byCell = <(int, int), Set<int>>{};
+    for (final (r, c, digit) in step.removals) {
+      if (!s.board.cellAt(r, c).isEmpty || !known[r][c].contains(digit)) continue;
+      byCell.putIfAbsent((r, c), () => {}).add(digit);
+    }
+    if (byCell.isEmpty) return;
+
+    var newBoard = s.board;
+    for (final entry in byCell.entries) {
+      final (r, c) = entry.key;
+      final cell = newBoard.cellAt(r, c);
+      newBoard = newBoard.setCell(r, c, cell.copyWith(notes: known[r][c].difference(entry.value)));
+    }
+
+    state = _withHistory(s, newBoard).copyWith(hintsUsed: s.hintsUsed + 1);
+    _sound.tap();
+    _schedulePersist();
+    _runAutoSolveCascade();
   }
 
   void _recordWin(Difficulty difficulty, BoardLayout layout, int elapsedSeconds) {
@@ -545,14 +674,31 @@ class GameController extends Notifier<GameState?> {
   /// True if any non-given, non-empty cell holds a value that isn't what
   /// [GameState.solution] has there - a mistake the player hasn't erased
   /// yet, even though it may not break any row/column/box rule on its own.
-  bool _hasWrongEntry(GameState s) {
+  bool _hasWrongEntry(GameState s) => _firstWrongEntry(s) != null;
+
+  (int, int)? _firstWrongEntry(GameState s) {
     for (final (r, c) in s.board.shape.activeCells) {
       final cell = s.board.cellAt(r, c);
       if (cell.isGiven || cell.isEmpty) continue;
-      if (cell.value != s.solution.cellAt(r, c).value) return true;
+      if (cell.value != s.solution.cellAt(r, c).value) return (r, c);
     }
-    return false;
+    return null;
   }
+
+  /// The first empty cell whose notes no longer include its true digit -
+  /// the player struck (or never added) the right one. See
+  /// [_knownCandidates] for why hints can't build on such notes.
+  (int, int)? _firstCellWithWrongNotes(GameState s) {
+    for (final (r, c) in s.board.shape.activeCells) {
+      final cell = s.board.cellAt(r, c);
+      if (!cell.isEmpty || cell.notes.isEmpty) continue;
+      if (!cell.notes.contains(s.solution.cellAt(r, c).value)) return (r, c);
+    }
+    return null;
+  }
+
+  List<(int, int)> _boxCells(Board board, (int, int) pos) =>
+      board.unitsContaining(pos.$1, pos.$2).firstWhere((u) => u.kind == UnitKind.box).cells;
 
   Future<void> _persist() async {
     final s = state;

@@ -51,6 +51,41 @@ class SettingsScreen extends ConsumerWidget {
               onChanged: (value) => controller.setMaxHints(value.round()),
             ),
           ),
+          ListTile(
+            title: Text(l10n.hintStyleTitle),
+            subtitle: RadioGroup<HintStyle>(
+              groupValue: settings.hintStyle,
+              onChanged: (value) => controller.setHintStyle(value!),
+              child: Column(
+                children: [
+                  RadioListTile<HintStyle>(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(l10n.hintStyleBeginner),
+                    subtitle: Text(l10n.hintStyleBeginnerDesc),
+                    value: HintStyle.beginner,
+                  ),
+                  RadioListTile<HintStyle>(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(l10n.hintStyleStandard),
+                    subtitle: Text(l10n.hintStyleStandardDesc),
+                    value: HintStyle.standard,
+                  ),
+                  RadioListTile<HintStyle>(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(l10n.hintStyleMinimal),
+                    subtitle: Text(l10n.hintStyleMinimalDesc),
+                    value: HintStyle.minimal,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          SwitchListTile(
+            title: Text(l10n.hintSelectedOnlyTitle),
+            subtitle: Text(l10n.hintSelectedOnlySubtitle),
+            value: settings.hintSelectedCellOnly,
+            onChanged: controller.setHintSelectedCellOnly,
+          ),
           SwitchListTile(
             title: Text(l10n.showErrorsTitle),
             subtitle: Text(l10n.showErrorsSubtitle),

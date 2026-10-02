@@ -553,6 +553,342 @@ abstract class AppLocalizations {
   /// In de, this message translates to:
   /// **'Keine einfache Logik-Regel greift hier - die Lösung für diese Zelle wird direkt verraten.'**
   String get hintDirectReveal;
+
+  /// Stage 1 hint text when the next step places a number.
+  ///
+  /// In de, this message translates to:
+  /// **'Im markierten Bereich lässt sich eine Zahl eintragen.'**
+  String get hintNudgePlace;
+
+  /// Stage 1 hint text when the next step only crosses out candidates.
+  ///
+  /// In de, this message translates to:
+  /// **'Im markierten Bereich lässt sich ein Kandidat ausschließen.'**
+  String get hintNudgeEliminate;
+
+  /// Hint banner button: go to the next, more detailed hint stage.
+  ///
+  /// In de, this message translates to:
+  /// **'Mehr Hilfe'**
+  String get hintMore;
+
+  /// Hint banner button: reveal the answer of the hint.
+  ///
+  /// In de, this message translates to:
+  /// **'Antwort zeigen'**
+  String get hintShowAnswer;
+
+  /// Hint banner button: dismiss the hint without using it.
+  ///
+  /// In de, this message translates to:
+  /// **'Abbrechen'**
+  String get hintCancel;
+
+  /// Hint banner button: place the hinted number (spends a hint).
+  ///
+  /// In de, this message translates to:
+  /// **'Zahl eintragen'**
+  String get hintPlace;
+
+  /// Hint banner button: cross the hinted candidates out of the notes (spends a hint).
+  ///
+  /// In de, this message translates to:
+  /// **'Notizen anpassen'**
+  String get hintApplyEliminations;
+
+  /// Stage 2 explanation of a naked single (does not name the digit).
+  ///
+  /// In de, this message translates to:
+  /// **'Naked Single: Die markierte Zelle hat nur noch einen Kandidaten.'**
+  String get hintExplainNakedSingle;
+
+  /// Stage 2 explanation of a hidden single. {unit} is already formatted (unitRow/unitColumn/unitBox).
+  ///
+  /// In de, this message translates to:
+  /// **'Hidden Single: In {unit} passt eine Ziffer nur noch in eine Zelle - die markierte.'**
+  String hintExplainHiddenSingle(String unit);
+
+  /// Stage 2 explanation of a naked pair. {digits} is a formatted list such as "4, 7".
+  ///
+  /// In de, this message translates to:
+  /// **'Naked Pair: Die markierten Zellen können zusammen nur {digits} enthalten, daher kommen diese Ziffern in den übrigen Zellen ihrer Einheit nicht vor.'**
+  String hintExplainNakedPair(String digits);
+
+  /// Stage 2 explanation of a pointing pair / box-line reduction. {digits} is a single digit.
+  ///
+  /// In de, this message translates to:
+  /// **'Pointing Pair / Box-Line: In dieser Einheit kann die {digits} nur in den markierten Zellen stehen, daher kommt sie in der kreuzenden Einheit sonst nirgends vor.'**
+  String hintExplainPointing(String digits);
+
+  /// Stage 2 explanation of a hidden pair. {digits} is a formatted list.
+  ///
+  /// In de, this message translates to:
+  /// **'Hidden Pair: Die Ziffern {digits} können nur in den markierten Zellen stehen, alle anderen Kandidaten dieser Zellen entfallen.'**
+  String hintExplainHiddenPair(String digits);
+
+  /// Stage 2 explanation of a naked triple. {digits} is a formatted list.
+  ///
+  /// In de, this message translates to:
+  /// **'Naked Triple: Die markierten Zellen enthalten zusammen nur {digits}, daher kommen diese Ziffern in den übrigen Zellen ihrer Einheit nicht vor.'**
+  String hintExplainNakedTriple(String digits);
+
+  /// Stage 2 explanation of an X-Wing. {digits} is a single digit.
+  ///
+  /// In de, this message translates to:
+  /// **'X-Wing: Die {digits} steckt in zwei Linien in den markierten Zellen fest, daher entfällt sie im Rest der Linien, die sie kreuzen.'**
+  String hintExplainXWing(String digits);
+
+  /// Stage 2 explanation of a Swordfish. {digits} is a single digit.
+  ///
+  /// In de, this message translates to:
+  /// **'Swordfish: Die {digits} steckt in drei Linien in den markierten Zellen fest, daher entfällt sie im Rest der Linien, die sie kreuzen.'**
+  String hintExplainSwordfish(String digits);
+
+  /// Stage 2 explanation of an XY-Wing. {digits} is the digit that can be removed.
+  ///
+  /// In de, this message translates to:
+  /// **'XY-Wing: Die markierten Zellen erzwingen die {digits} in einer der beiden äußeren Zellen, daher kann sie in keiner Zelle stehen, die beide sieht.'**
+  String hintExplainXYWing(String digits);
+
+  /// Stage 3 text of an elimination hint. {count} is the number of cells that lose a candidate.
+  ///
+  /// In de, this message translates to:
+  /// **'{count, plural, =1{Streiche den durchgestrichenen Kandidaten in der markierten Zelle.} other{Streiche die durchgestrichenen Kandidaten in den {count} markierten Zellen.}}'**
+  String hintAnswerEliminations(int count);
+
+  /// Settings: how much a hint explains.
+  ///
+  /// In de, this message translates to:
+  /// **'Hinweis-Stil'**
+  String get hintStyleTitle;
+
+  /// Settings: hint style option.
+  ///
+  /// In de, this message translates to:
+  /// **'Einsteiger'**
+  String get hintStyleBeginner;
+
+  /// Settings: description of the beginner hint style.
+  ///
+  /// In de, this message translates to:
+  /// **'Erklärt immer, warum eine Technik funktioniert.'**
+  String get hintStyleBeginnerDesc;
+
+  /// Settings: hint style option.
+  ///
+  /// In de, this message translates to:
+  /// **'Standard'**
+  String get hintStyleStandard;
+
+  /// Settings: description of the standard hint style.
+  ///
+  /// In de, this message translates to:
+  /// **'Die Erklärung ist einen Tipp entfernt.'**
+  String get hintStyleStandardDesc;
+
+  /// Settings: hint style option.
+  ///
+  /// In de, this message translates to:
+  /// **'Minimal'**
+  String get hintStyleMinimal;
+
+  /// Settings: description of the minimal hint style.
+  ///
+  /// In de, this message translates to:
+  /// **'Nennt nur die Technik, ohne sie zu erklären.'**
+  String get hintStyleMinimalDesc;
+
+  /// Settings: toggle title.
+  ///
+  /// In de, this message translates to:
+  /// **'Hinweis für die gewählte Zelle'**
+  String get hintSelectedOnlyTitle;
+
+  /// Settings: toggle subtitle.
+  ///
+  /// In de, this message translates to:
+  /// **'Ist eine Zelle gewählt, gibt es nur Hinweise zu dieser Zelle.'**
+  String get hintSelectedOnlySubtitle;
+
+  /// Title of the hint panel before a technique is named.
+  ///
+  /// In de, this message translates to:
+  /// **'Hinweis'**
+  String get hintPanelTitle;
+
+  /// Hint panel: which stage of the hint is showing.
+  ///
+  /// In de, this message translates to:
+  /// **'Schritt {stage} von {total}'**
+  String hintStageLabel(int stage, int total);
+
+  /// Hint panel button: go back one stage.
+  ///
+  /// In de, this message translates to:
+  /// **'Zurück'**
+  String get hintBack;
+
+  /// Hint panel button: show the rule behind the technique.
+  ///
+  /// In de, this message translates to:
+  /// **'Warum funktioniert das?'**
+  String get hintWhy;
+
+  /// Hint panel: shown instead of the apply button when no hint charges remain.
+  ///
+  /// In de, this message translates to:
+  /// **'Keine Hinweise mehr'**
+  String get hintNoHintsLeft;
+
+  /// Snackbar when selected-cell-only mode finds nothing for the selected cell.
+  ///
+  /// In de, this message translates to:
+  /// **'Kein direkter Hinweis für diese Zelle. Wähle sie ab für einen allgemeinen Hinweis.'**
+  String get hintNoneForCell;
+
+  /// Tooltip of the hint panel's info button.
+  ///
+  /// In de, this message translates to:
+  /// **'Technik-Erklärung'**
+  String get hintGuideTooltip;
+
+  /// Technique guide dialog button.
+  ///
+  /// In de, this message translates to:
+  /// **'Schließen'**
+  String get guideClose;
+
+  /// Technique guide: legend under the diagram.
+  ///
+  /// In de, this message translates to:
+  /// **'Gelb: die Zellen, die das Muster bilden. Rot: ausgeschlossen bzw. entfernt.'**
+  String get guideLegend;
+
+  /// Hint panel title for a wrong-entry hint.
+  ///
+  /// In de, this message translates to:
+  /// **'Fehler gefunden'**
+  String get hintTitleMistake;
+
+  /// Hint panel title for a wrong-notes hint.
+  ///
+  /// In de, this message translates to:
+  /// **'Notizen prüfen'**
+  String get hintTitleNotes;
+
+  /// Technique name.
+  ///
+  /// In de, this message translates to:
+  /// **'Naked Pair'**
+  String get techniqueNakedPair;
+
+  /// Technique name.
+  ///
+  /// In de, this message translates to:
+  /// **'Pointing Pair / Box-Line Reduction'**
+  String get techniquePointing;
+
+  /// Stage 1 text of a mistake hint.
+  ///
+  /// In de, this message translates to:
+  /// **'Auf dem Brett stimmt etwas nicht.'**
+  String get hintNudgeFix;
+
+  /// Stage 2 text of a wrong-entry hint.
+  ///
+  /// In de, this message translates to:
+  /// **'Die markierte Zahl ist falsch.'**
+  String get hintExplainWrongValue;
+
+  /// Stage 2 text of a wrong-notes hint.
+  ///
+  /// In de, this message translates to:
+  /// **'In den Notizen der markierten Zelle fehlt die richtige Ziffer.'**
+  String get hintExplainWrongNotes;
+
+  /// Stage 3 text of a wrong-entry hint.
+  ///
+  /// In de, this message translates to:
+  /// **'Entferne die markierte Zahl.'**
+  String get hintAnswerWrongValue;
+
+  /// Stage 3 text of a wrong-notes hint.
+  ///
+  /// In de, this message translates to:
+  /// **'Setze die Notizen der markierten Zelle auf ihre möglichen Kandidaten zurück.'**
+  String get hintAnswerWrongNotes;
+
+  /// Hint panel apply button for a wrong-entry hint (spends a hint).
+  ///
+  /// In de, this message translates to:
+  /// **'Zahl entfernen'**
+  String get hintRemoveNumber;
+
+  /// Hint panel apply button for a wrong-notes hint (spends a hint).
+  ///
+  /// In de, this message translates to:
+  /// **'Notizen zurücksetzen'**
+  String get hintResetNotes;
+
+  /// Technique guide text.
+  ///
+  /// In de, this message translates to:
+  /// **'Eine Zelle ist ein Naked Single, wenn durch ihre Zeile, Spalte und Box schon alle Ziffern bis auf eine ausgeschlossen sind. Die übrige Ziffer muss dort hin.'**
+  String get guideNakedSingle;
+
+  /// Technique guide text.
+  ///
+  /// In de, this message translates to:
+  /// **'Eine Ziffer ist ein Hidden Single in einer Einheit (Zeile, Spalte oder Box), wenn nur noch eine Zelle dieser Einheit sie aufnehmen kann. Auch wenn diese Zelle weitere Kandidaten hat, muss die Ziffer dort hin.'**
+  String get guideHiddenSingle;
+
+  /// Technique guide text.
+  ///
+  /// In de, this message translates to:
+  /// **'Können zwei Zellen einer Einheit nur dieselben zwei Ziffern enthalten, gehören diese Ziffern in genau diese Zellen, in der einen oder anderen Reihenfolge. Daher entfallen sie in allen anderen Zellen dieser Einheit.'**
+  String get guideNakedPair;
+
+  /// Technique guide text.
+  ///
+  /// In de, this message translates to:
+  /// **'Liegen alle verbleibenden Plätze einer Ziffer in einer Einheit auf einer Linie, die sie mit einer anderen Einheit teilt (etwa Box und Zeile), muss die Ziffer auf diese Linie. Daher entfällt sie im Rest der anderen Einheit.'**
+  String get guidePointing;
+
+  /// Technique guide text.
+  ///
+  /// In de, this message translates to:
+  /// **'Können zwei Ziffern nur in dieselben zwei Zellen einer Einheit, müssen genau diese Ziffern in diesen Zellen stehen. Alle anderen Kandidaten in diesen beiden Zellen entfallen.'**
+  String get guideHiddenPair;
+
+  /// Technique guide text.
+  ///
+  /// In de, this message translates to:
+  /// **'Enthalten drei Zellen einer Einheit zusammen nur drei Ziffern, gehören diese Ziffern in diese Zellen. Sie entfallen in allen anderen Zellen der Einheit.'**
+  String get guideNakedTriple;
+
+  /// Technique guide text.
+  ///
+  /// In de, this message translates to:
+  /// **'Kann eine Ziffer in zwei Zeilen nur in dieselben zwei Spalten, landet sie in zwei gegenüberliegenden Ecken eines Rechtecks. Daher entfällt sie im Rest dieser beiden Spalten (und ebenso mit vertauschten Zeilen und Spalten).'**
+  String get guideXWing;
+
+  /// Technique guide text.
+  ///
+  /// In de, this message translates to:
+  /// **'Eine Zelle mit den Kandidaten A und B sieht zwei Zellen mit A+C und B+C. Wie auch immer die erste Zelle ausgeht, C landet in einer der beiden anderen. Daher entfällt C in jeder Zelle, die beide sieht.'**
+  String get guideXYWing;
+
+  /// Technique guide text.
+  ///
+  /// In de, this message translates to:
+  /// **'Wie ein X-Wing, aber über drei Zeilen und drei Spalten: Steckt eine Ziffer in drei Zeilen in denselben drei Spalten fest, entfällt sie im Rest dieser Spalten (und ebenso mit vertauschten Zeilen und Spalten).'**
+  String get guideSwordfish;
+
+  /// Line in the win dialog showing how many hints were used.
+  ///
+  /// In de, this message translates to:
+  /// **'Genutzte Hinweise: {count}'**
+  String wonHintsUsed(int count);
 }
 
 class _AppLocalizationsDelegate

@@ -31,6 +31,9 @@ class SettingsController extends Notifier<Settings> {
   Future<void> setThemeMode(AppThemeMode value) => _update((s) => s.copyWith(themeMode: value));
   Future<void> setLocale(AppLocale value) => _update((s) => s.copyWith(locale: value));
   Future<void> setSoundEnabled(bool value) => _update((s) => s.copyWith(soundEnabled: value));
+  Future<void> setHintStyle(HintStyle value) => _update((s) => s.copyWith(hintStyle: value));
+  Future<void> setHintSelectedCellOnly(bool value) =>
+      _update((s) => s.copyWith(hintSelectedCellOnly: value));
 }
 
 final settingsControllerProvider = NotifierProvider<SettingsController, Settings>(SettingsController.new);

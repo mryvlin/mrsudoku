@@ -12,8 +12,8 @@ import '../../models/puzzle_shape.dart';
 import '../../models/settings.dart';
 import '../difficulty_labels.dart';
 import '../format_duration.dart';
-import '../hint_text.dart';
 import '../widgets/game_toolbar_widget.dart';
+import '../widgets/hint_panel.dart';
 import '../widgets/number_pad_widget.dart';
 import '../widgets/sudoku_board_widget.dart';
 import '../widgets/win_celebration.dart';
@@ -33,11 +33,15 @@ class _GameScreenState extends ConsumerState<GameScreen> with WidgetsBindingObse
   Timer? _timer;
   bool _endDialogShown = false;
 
-  /// The most recent hint, kept only so the board can narrow its peer
-  /// highlight down to the specific unit that forced a hidden single (see
-  /// [SudokuBoardWidget.hintFocusUnit]). Becomes irrelevant - and is ignored
-  /// - the moment selection moves away from the hinted cell.
-  HintStep? _lastHint;
+  /// The hint being walked through (see [_useHint]), the stage it is at
+  /// (1 = nudge at the area, 2 = technique and evidence, 3 = the answer),
+  /// and the board it was computed for. The step is only valid for that
+  /// exact board: any change to it (a placement, a note, undo) makes the
+  /// step stale, and the session is dropped (see [build]).
+  HintStep? _hintStep;
+  int _hintStage = 1;
+  Board? _hintBoard;
+  bool _hintWhyExpanded = false;
 
   late ScaffoldMessengerState _messenger;
 
@@ -65,8 +69,6 @@ class _GameScreenState extends ConsumerState<GameScreen> with WidgetsBindingObse
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
-    // Don't leave a hint banner dangling on whatever screen comes next.
-    _messenger.clearMaterialBanners();
     super.dispose();
   }
 
@@ -96,7 +98,7 @@ class _GameScreenState extends ConsumerState<GameScreen> with WidgetsBindingObse
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         if (gameState.isWon) {
-          _showWinDialog(gameState.elapsedSeconds, gameState.board);
+          _showWinDialog(gameState.elapsedSeconds, gameState.board, gameState.hintsUsed);
         } else {
           _showGameOverDialog();
         }
@@ -105,15 +107,25 @@ class _GameScreenState extends ConsumerState<GameScreen> with WidgetsBindingObse
 
     final remainingCounts = _remainingCounts(gameState.board);
 
-    // Only apply the narrowed unit highlight while the hinted cell is still
-    // the one selected - once the player moves on, the old hint no longer
-    // means anything for whatever's selected now.
-    final lastHint = _lastHint;
-    final hintFocusUnit = (lastHint != null &&
-            lastHint.singleKind == SingleKind.hidden &&
-            gameState.selectedRow == lastHint.row &&
-            gameState.selectedCol == lastHint.col)
-        ? lastHint.hiddenUnit
+    // A hint is only meaningful for the board it was computed on; drop it
+    // as soon as the board changes or the game stops accepting input.
+    final activeHint = _hintStep;
+    if (activeHint != null &&
+        (!identical(_hintBoard, gameState.board) || gameState.isPaused || gameState.isWon || gameState.isGameOver)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _endHint();
+      });
+    }
+
+    // Only apply the narrowed unit highlight once the hinted cell is
+    // revealed (stage 2+) and still the one selected - once the player moves
+    // on, the old hint no longer means anything for whatever's selected now.
+    final hintFocusUnit = (activeHint != null &&
+            _hintStage >= 2 &&
+            activeHint.singleKind == SingleKind.hidden &&
+            gameState.selectedRow == activeHint.row &&
+            gameState.selectedCol == activeHint.col)
+        ? activeHint.hiddenUnit
         : null;
 
     final scaffold = Scaffold(
@@ -166,11 +178,28 @@ class _GameScreenState extends ConsumerState<GameScreen> with WidgetsBindingObse
                               highlightColor: settings.highlightColor,
                               showErrors: settings.showErrors,
                               hintFocusUnit: hintFocusUnit,
+                              hintStep: activeHint,
+                              hintStage: _hintStage,
                               onCellTap: (row, col) =>
                                   ref.read(gameControllerProvider.notifier).selectCell(row, col),
                             ),
                     ),
                   ),
+                  if (activeHint != null) ...[
+                    const SizedBox(height: 8),
+                    HintPanel(
+                      step: activeHint,
+                      stage: _hintStage,
+                      style: settings.hintStyle,
+                      whyExpanded: _hintWhyExpanded,
+                      hintsRemaining: gameState.hintsRemaining,
+                      onBack: _retreatHint,
+                      onNext: _advanceHint,
+                      onCancel: _endHint,
+                      onApply: _takeHint,
+                      onToggleWhy: () => setState(() => _hintWhyExpanded = !_hintWhyExpanded),
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   // Undo/redo/notes/hint all already no-op while paused (see
                   // GameController._locked), but the board itself is hidden
@@ -242,37 +271,75 @@ class _GameScreenState extends ConsumerState<GameScreen> with WidgetsBindingObse
     return counts;
   }
 
+  /// The Hint button: starts a hint, or - while one is showing - moves it
+  /// on to its next stage. A hint is walked through in up to three stages
+  /// (see [HintPanel]) so the player only sees as much as they ask for: (1)
+  /// a nudge that tints the area where the next step is, (2) the technique
+  /// and the cells that form it, (3) the answer, which is only applied (and
+  /// a hint spent) once the player takes it. The first two stages are free.
+  /// The direct-reveal fallback has no logic to walk through and starts at
+  /// the answer.
   void _useHint() {
-    // Only peeks - selects the hinted cell and shows its explanation/
-    // highlight - without placing the value. The value is placed by
-    // confirmHint once the player taps "Got it" below.
+    if (_hintStep != null) {
+      _advanceHint();
+      return;
+    }
     final step = ref.read(gameControllerProvider.notifier).peekHint();
+    if (step == null) {
+      // Only selected-cell-only mode can come up empty on a live game; say
+      // why instead of leaving the button looking dead.
+      if (ref.read(settingsControllerProvider).hintSelectedCellOnly &&
+          (ref.read(gameControllerProvider)?.hasSelection ?? false)) {
+        _messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.hintNoneForCell)));
+      }
+      return;
+    }
+
+    setState(() {
+      _hintStep = step;
+      _hintStage = step.hasStages ? 1 : 3;
+      _hintBoard = ref.read(gameControllerProvider)!.board;
+      _hintWhyExpanded = false;
+    });
+    _revealTargetIfNeeded();
+  }
+
+  void _advanceHint() {
+    if (_hintStage >= 3) return;
+    setState(() => _hintStage++);
+    _revealTargetIfNeeded();
+  }
+
+  void _retreatHint() {
+    if (_hintStage <= 1) return;
+    setState(() => _hintStage--);
+  }
+
+  void _endHint() {
+    if (_hintStep == null) return;
+    setState(() {
+      _hintStep = null;
+      _hintBoard = null;
+    });
+  }
+
+  void _takeHint() {
+    final step = _hintStep;
     if (step == null) return;
+    _endHint();
+    ref.read(gameControllerProvider.notifier).confirmHint(step);
+  }
 
-    final l10n = AppLocalizations.of(context)!;
-    setState(() => _lastHint = step);
-
-    // A banner (not a snackbar) so the explanation - and the board's unit
-    // highlight while it's up - stay put until the player is done reading,
-    // rather than racing a timeout.
-    _messenger
-      ..clearMaterialBanners()
-      ..showMaterialBanner(
-        MaterialBanner(
-          leading: const Icon(Icons.lightbulb_outline),
-          content: Text(describeHint(step, l10n)),
-          actions: [
-            TextButton(
-              onPressed: () {
-                _messenger.hideCurrentMaterialBanner();
-                ref.read(gameControllerProvider.notifier).confirmHint(step);
-                if (mounted) setState(() => _lastHint = null);
-              },
-              child: Text(l10n.hintDismiss),
-            ),
-          ],
-        ),
-      );
+  /// From stage 2 on, a hint that is about one particular cell - a
+  /// placement or a mistake - selects it, which is what makes the board show
+  /// it. An elimination involves several cells, so the selection stays out
+  /// of the way.
+  void _revealTargetIfNeeded() {
+    final step = _hintStep;
+    if (step == null || _hintStage < 2 || step.kind == HintKind.eliminate) return;
+    ref.read(gameControllerProvider.notifier).focusCell(step.row, step.col);
   }
 
   Future<void> _leaveToMenu() async {
@@ -282,7 +349,7 @@ class _GameScreenState extends ConsumerState<GameScreen> with WidgetsBindingObse
     Navigator.of(context).pop(); // back to Home
   }
 
-  void _showWinDialog(int elapsedSeconds, Board board) {
+  void _showWinDialog(int elapsedSeconds, Board board, int hintsUsed) {
     final l10n = AppLocalizations.of(context)!;
     final renderBox = _boardKey.currentContext?.findRenderObject() as RenderBox?;
     if (renderBox != null) {
@@ -302,7 +369,12 @@ class _GameScreenState extends ConsumerState<GameScreen> with WidgetsBindingObse
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         title: Text(l10n.wonTitle),
-        content: Text(l10n.wonMessage(formatDuration(elapsedSeconds))),
+        content: Text(
+          [
+            l10n.wonMessage(formatDuration(elapsedSeconds)),
+            if (hintsUsed > 0) l10n.wonHintsUsed(hintsUsed),
+          ].join('\n'),
+        ),
         actions: [
           TextButton(onPressed: _leaveToMenu, child: Text(l10n.backToMenu)),
         ],
@@ -341,6 +413,8 @@ class _Board extends StatelessWidget {
   final HighlightColor highlightColor;
   final bool showErrors;
   final HintUnitType? hintFocusUnit;
+  final HintStep? hintStep;
+  final int hintStage;
   final void Function(int row, int col) onCellTap;
 
   const _Board({
@@ -354,6 +428,8 @@ class _Board extends StatelessWidget {
     required this.highlightColor,
     required this.showErrors,
     required this.hintFocusUnit,
+    required this.hintStep,
+    required this.hintStage,
     required this.onCellTap,
   });
 
@@ -370,6 +446,8 @@ class _Board extends StatelessWidget {
       highlightColor: highlightColor,
       showErrors: showErrors,
       hintFocusUnit: hintFocusUnit,
+      hintStep: hintStep,
+      hintStage: hintStage,
       onCellTap: onCellTap,
     );
     if (isClassic) return boardWidget;

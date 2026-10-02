@@ -88,4 +88,125 @@ void main() {
     expect(describeHint(step, de), de.hintDirectReveal);
     expect(describeHint(step, en), en.hintDirectReveal);
   });
+
+  group('tiered hint text', () {
+    final pair = HintStep.elimination(
+      pattern: EliminationPattern.nakedPair,
+      removals: const [(0, 2, 4), (0, 3, 7)],
+      evidenceCells: const [(0, 0), (0, 1)],
+      evidenceDigits: const {4, 7},
+      regionCells: const [(0, 0), (0, 1), (0, 2), (0, 3)],
+    );
+
+    test('the nudge says what kind of step is nearby without naming cell or digit', () {
+      const place = HintStep(row: 2, col: 4, value: 7, technique: SolvingTechnique.nakedSingle);
+
+      expect(describeHintNudge(place, en), en.hintNudgePlace);
+      expect(describeHintNudge(pair, en), en.hintNudgeEliminate);
+      expect(describeHintNudge(place, en), isNot(contains('7')));
+    });
+
+    test('a single\'s explanation names the technique but not the digit', () {
+      const naked = HintStep(row: 2, col: 4, value: 7, technique: SolvingTechnique.nakedSingle);
+      const hidden = HintStep(
+        row: 0,
+        col: 8,
+        value: 2,
+        technique: SolvingTechnique.hiddenSingle,
+        singleKind: SingleKind.hidden,
+        hiddenUnit: HintUnitType.row,
+      );
+
+      expect(describeHintExplanation(naked, en), startsWith('Naked Single'));
+      expect(describeHintExplanation(naked, en), isNot(contains('7')));
+      expect(describeHintExplanation(hidden, en), contains('row 1'));
+      expect(describeHintExplanation(hidden, en), isNot(contains('2')));
+    });
+
+    test('an elimination explanation names the pattern and its digits, in each locale', () {
+      expect(describeHintExplanation(pair, en), allOf(startsWith('Naked Pair'), contains('4, 7')));
+      expect(describeHintExplanation(pair, de), allOf(startsWith('Naked Pair'), contains('4, 7')));
+    });
+
+    test('every elimination pattern has an explanation in both locales', () {
+      for (final pattern in EliminationPattern.values) {
+        final step = HintStep.elimination(
+          pattern: pattern,
+          removals: const [(0, 0, 5)],
+          evidenceCells: const [(0, 1)],
+          evidenceDigits: const {5},
+          regionCells: const [(0, 0), (0, 1)],
+        );
+        expect(describeHintExplanation(step, en), isNotEmpty);
+        expect(describeHintExplanation(step, de), isNotEmpty);
+      }
+    });
+
+    test('the answer of an elimination counts the cells that lose a candidate', () {
+      final one = HintStep.elimination(
+        pattern: EliminationPattern.nakedPair,
+        removals: const [(0, 2, 4), (0, 2, 7)],
+        evidenceCells: const [(0, 0), (0, 1)],
+        evidenceDigits: const {4, 7},
+        regionCells: const [(0, 0)],
+      );
+
+      expect(describeHint(one, en), contains('marked cell.'));
+      expect(describeHint(pair, en), contains('2 marked cells'));
+      expect(describeHint(pair, de), contains('2 markierten Zellen'));
+    });
+  });
+
+  group('mistake hints and guide topics', () {
+    final wrongValue = HintStep.fix(kind: HintKind.fixValue, row: 1, col: 1);
+    final wrongNotes = HintStep.fix(kind: HintKind.fixNotes, row: 1, col: 1);
+
+    test('mistake hints have their own text at every stage', () {
+      for (final l10n in [en, de]) {
+        expect(describeHintNudge(wrongValue, l10n), l10n.hintNudgeFix);
+        expect(describeHintExplanation(wrongValue, l10n), l10n.hintExplainWrongValue);
+        expect(describeHint(wrongValue, l10n), l10n.hintAnswerWrongValue);
+        expect(describeHintExplanation(wrongNotes, l10n), l10n.hintExplainWrongNotes);
+        expect(describeHint(wrongNotes, l10n), l10n.hintAnswerWrongNotes);
+        expect(describeHintTitle(wrongValue, l10n), l10n.hintTitleMistake);
+        expect(describeHintTitle(wrongNotes, l10n), l10n.hintTitleNotes);
+      }
+    });
+
+    test('mistake hints and the direct reveal have no guide topic', () {
+      expect(guideTopicOf(wrongValue), isNull);
+      expect(guideTopicOf(wrongNotes), isNull);
+      expect(
+        guideTopicOf(const HintStep(row: 0, col: 0, value: 1, technique: SolvingTechnique.backtracking)),
+        isNull,
+      );
+    });
+
+    test('every topic has a title and a body in both locales', () {
+      for (final topic in GuideTopic.values) {
+        for (final l10n in [en, de]) {
+          expect(guideTitle(topic, l10n), isNotEmpty);
+          expect(guideBody(topic, l10n).length, greaterThan(40));
+        }
+      }
+    });
+
+    test('topics follow the pattern, telling pairs from pointing pairs', () {
+      HintStep elimination(EliminationPattern pattern) => HintStep.elimination(
+            pattern: pattern,
+            removals: const [(0, 0, 1)],
+            evidenceCells: const [(0, 1)],
+            evidenceDigits: const {1},
+            regionCells: const [(0, 0)],
+          );
+
+      expect(guideTopicOf(elimination(EliminationPattern.nakedPair)), GuideTopic.nakedPair);
+      expect(guideTopicOf(elimination(EliminationPattern.pointing)), GuideTopic.pointing);
+      expect(guideTopicOf(elimination(EliminationPattern.swordfish)), GuideTopic.swordfish);
+      expect(
+        guideTopicOf(const HintStep(row: 0, col: 0, value: 1, technique: SolvingTechnique.nakedSingle)),
+        GuideTopic.nakedSingle,
+      );
+    });
+  });
 }

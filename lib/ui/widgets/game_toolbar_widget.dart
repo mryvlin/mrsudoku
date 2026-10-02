@@ -85,7 +85,7 @@ class GameToolbarWidget extends StatelessWidget {
             key: const ValueKey('toolbar-hint'),
             icon: Icons.lightbulb_outline,
             label: l10n.hintLabel(hintsRemaining),
-            onTap: hintsRemaining > 0 ? onHint : null,
+            onTap: onHint,
           ),
         ),
       ],

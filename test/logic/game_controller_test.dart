@@ -2,7 +2,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mrsudoku/logic/candidates.dart';
 import 'package:mrsudoku/logic/generator.dart';
+import 'package:mrsudoku/logic/hint_engine.dart';
 import 'package:mrsudoku/logic/providers.dart';
+import 'package:mrsudoku/logic/solver.dart';
 import 'package:mrsudoku/logic/validator.dart';
 import 'package:mrsudoku/models/board.dart';
 import 'package:mrsudoku/models/board_layout.dart';
@@ -357,16 +359,25 @@ void main() {
     });
   });
 
-  test('peekHint selects the hinted cell but does not place its value or spend a hint', () {
+  test('peekHint changes nothing: no placement, no selection, no spent hint', () {
     final before = state().hintsRemaining;
+    final boardBefore = state().board;
 
     final step = controller.peekHint();
 
     expect(step, isNotNull);
     expect(state().hintsRemaining, before, reason: 'peeking alone must not spend a hint');
-    expect(state().board.cellAt(step!.row, step.col).value, 0);
-    expect(state().selectedRow, step.row);
-    expect(state().selectedCol, step.col);
+    expect(identical(state().board, boardBefore), isTrue);
+    expect(state().hasSelection, isFalse, reason: 'the first hint stages must not reveal the cell');
+  });
+
+  test('focusCell selects without toggling off when the cell is already selected', () {
+    controller.focusCell(2, 3);
+    expect((state().selectedRow, state().selectedCol), (2, 3));
+
+    controller.focusCell(2, 3);
+
+    expect((state().selectedRow, state().selectedCol), (2, 3));
   });
 
   test('confirmHint places the value and spends exactly one hint', () {
@@ -383,10 +394,9 @@ void main() {
     final step = controller.peekHint()!;
     final before = state().hintsRemaining;
     // Simulate the player entering something else there while the hint's
-    // banner was still up, before tapping "Got it" - peekHint already
-    // selected the cell, so it's ready for input without selecting it again
-    // (which would now deselect it instead - see selectCell's toggle).
+    // banner was still up, before taking the answer.
     final otherValue = (step.value % 9) + 1;
+    controller.selectCell(step.row, step.col);
     controller.inputNumber(otherValue);
 
     controller.confirmHint(step);
@@ -395,19 +405,242 @@ void main() {
     expect(state().board.cellAt(step.row, step.col).value, otherValue);
   });
 
-  test('peekHint refuses to hint while a wrong entry is still on the board', () {
-    controller.restore(_fixtureState());
-    controller.selectCell(0, 0);
-    controller.inputNumber(3); // solution at (0, 0) is 5, so 3 is wrong
-    expect(state().mistakes, 1);
-    final hintsBefore = state().hintsRemaining;
+  group('mistake hints', () {
+    test('a wrong entry gets a fix-value hint instead of being refused', () {
+      controller.restore(_fixtureState());
+      controller.selectCell(0, 0);
+      controller.inputNumber(3); // solution at (0, 0) is 5, so 3 is wrong
+      expect(state().mistakes, 1);
+      final hintsBefore = state().hintsRemaining;
 
-    final step = controller.peekHint();
+      final step = controller.peekHint();
 
-    expect(step, isNull);
-    expect(state().hintsRemaining, hintsBefore);
-    // The wrong entry is untouched - a hint must not silently "fix" it.
-    expect(state().board.cellAt(0, 0).value, 3);
+      expect(step, isNotNull);
+      expect(step!.kind, HintKind.fixValue);
+      expect((step.row, step.col), (0, 0));
+      expect(step.regionCells, isNotEmpty);
+      expect(state().hintsRemaining, hintsBefore, reason: 'looking is free');
+      expect(state().board.cellAt(0, 0).value, 3, reason: 'peeking must not fix it');
+    });
+
+    test('confirmHint removes the wrong entry, keeps its notes and spends one hint', () {
+      controller.restore(_fixtureState());
+      controller.selectCell(0, 0);
+      controller.toggleNotesMode();
+      controller.inputNumber(5);
+      controller.inputNumber(3);
+      controller.toggleNotesMode();
+      controller.inputNumber(3); // wrong entry on top of notes {3, 5}
+      final step = controller.peekHint()!;
+      final hintsBefore = state().hintsRemaining;
+
+      controller.confirmHint(step);
+
+      expect(state().board.cellAt(0, 0).value, 0);
+      expect(state().board.cellAt(0, 0).notes, {3, 5});
+      expect(state().hintsRemaining, hintsBefore - 1);
+    });
+
+    test('confirming a fix hint after the entry was already corrected is a no-op', () {
+      controller.restore(_fixtureState());
+      controller.selectCell(0, 0);
+      controller.inputNumber(3);
+      final step = controller.peekHint()!;
+      controller.eraseSelected();
+      controller.inputNumber(5); // now correct
+      final hintsBefore = state().hintsRemaining;
+
+      controller.confirmHint(step);
+
+      expect(state().board.cellAt(0, 0).value, 5);
+      expect(state().hintsRemaining, hintsBefore);
+    });
+
+    test('notes that lost the true digit get a fix-notes hint, which resets them to the legal candidates', () {
+      controller.restore(_fixtureState());
+      controller.selectCell(0, 0); // solution is 5
+      controller.toggleNotesMode();
+      controller.inputNumber(3);
+      controller.inputNumber(1);
+      final step = controller.peekHint()!;
+
+      expect(step.kind, HintKind.fixNotes);
+      expect((step.row, step.col), (0, 0));
+
+      final hintsBefore = state().hintsRemaining;
+      controller.confirmHint(step);
+
+      expect(state().board.cellAt(0, 0).notes, Candidates.forCell(state().board, 0, 0));
+      expect(state().board.cellAt(0, 0).notes, contains(5));
+      expect(state().hintsRemaining, hintsBefore - 1);
+    });
+  });
+
+  group('hint budget', () {
+    test('peekHint still works with no hints left - only taking the answer needs one', () {
+      controller.restore(GameState(
+        board: _fixtureState().board,
+        solution: _fixtureState().solution,
+        difficulty: Difficulty.easy,
+        maxHints: 0,
+      ));
+      final boardBefore = state().board;
+
+      final step = controller.peekHint();
+      expect(step, isNotNull);
+
+      controller.confirmHint(step!);
+      expect(identical(state().board, boardBefore), isTrue);
+      expect(state().hintsUsed, 0);
+    });
+  });
+
+  group('hint selection', () {
+    // Two independent naked singles, far apart: (0, 8) = 2 in row 0, and
+    // (8, 0) = 1 in row 8 (the rest of each row given).
+    GameState twoSinglesFixture() {
+      final values = List.generate(9, (_) => List.filled(9, 0));
+      values[0] = [5, 3, 4, 6, 7, 8, 9, 1, 0];
+      values[8] = [0, 2, 3, 4, 5, 6, 7, 8, 9];
+      final solutionValues = List.generate(9, (_) => List.filled(9, 0));
+      solutionValues[0] = [5, 3, 4, 6, 7, 8, 9, 1, 2];
+      solutionValues[8] = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+      return GameState(
+        board: Board.fromValues(values),
+        solution: Board.fromValues(solutionValues),
+        difficulty: Difficulty.easy,
+      );
+    }
+
+    test('a single near the selected cell is preferred over one elsewhere', () {
+      controller.restore(twoSinglesFixture());
+
+      controller.selectCell(7, 1);
+      final nearBottom = controller.peekHint()!;
+      expect((nearBottom.row, nearBottom.col), (8, 0));
+
+      controller.selectCell(1, 7);
+      final nearTop = controller.peekHint()!;
+      expect((nearTop.row, nearTop.col), (0, 8));
+    });
+
+    test('selected-cell-only mode hints just the selected cell, or nothing', () async {
+      controller.restore(twoSinglesFixture());
+      await container.read(settingsControllerProvider.notifier).setHintSelectedCellOnly(true);
+
+      controller.selectCell(8, 0);
+      final own = controller.peekHint()!;
+      expect((own.row, own.col, own.kind), (8, 0, HintKind.place));
+
+      controller.selectCell(4, 4); // an empty cell with no step of its own
+      expect(controller.peekHint(), isNull);
+
+      controller.selectCell(0, 0); // a given: not restricted
+      expect(controller.peekHint(), isNotNull);
+    });
+  });
+
+  group('elimination hints', () {
+    // A board where the first hint is an elimination (a naked pair), not a
+    // placement - the same fixture HintEngine's tests use for "pointing".
+    const puzzle = [
+      [0, 0, 6, 1, 0, 8, 0, 4, 7],
+      [0, 0, 0, 0, 4, 0, 0, 0, 0],
+      [4, 7, 0, 0, 5, 0, 0, 0, 8],
+      [6, 0, 8, 0, 0, 0, 4, 5, 9],
+      [0, 5, 9, 0, 6, 0, 7, 0, 0],
+      [7, 0, 4, 5, 0, 9, 0, 0, 0],
+      [0, 4, 7, 2, 0, 0, 0, 0, 0],
+      [9, 0, 5, 0, 7, 0, 3, 1, 2],
+      [0, 0, 2, 0, 0, 5, 8, 7, 4],
+    ];
+
+    GameState eliminationFixture() => GameState(
+          board: Board.fromValues(puzzle),
+          solution: Board.fromValues(Solver.solve([for (final row in puzzle) [...row]])!),
+          difficulty: Difficulty.easy,
+        );
+
+    test('peekHint returns an elimination step that touches nothing', () {
+      controller.restore(eliminationFixture());
+      final boardBefore = state().board;
+
+      final step = controller.peekHint()!;
+
+      expect(step.kind, HintKind.eliminate);
+      expect(step.removals, isNotEmpty);
+      expect(identical(state().board, boardBefore), isTrue);
+    });
+
+    test('confirmHint crosses the candidates out of the notes, spends one hint and is undoable', () {
+      controller.restore(eliminationFixture());
+      final step = controller.peekHint()!;
+      final hintsBefore = state().hintsRemaining;
+      final filledBefore = state().board.shape.activeCells.where((p) => !state().board.cellAt(p.$1, p.$2).isEmpty).length;
+
+      controller.confirmHint(step);
+
+      expect(state().hintsRemaining, hintsBefore - 1);
+      for (final (r, c, digit) in step.removals) {
+        final cell = state().board.cellAt(r, c);
+        expect(cell.isEmpty, isTrue);
+        expect(cell.notes, isNotEmpty, reason: 'the elimination is written out as notes');
+        expect(cell.notes, isNot(contains(digit)));
+        expect(cell.notes, contains(state().solution.cellAt(r, c).value), reason: 'never strike the true value');
+      }
+      final filledAfter = state().board.shape.activeCells.where((p) => !state().board.cellAt(p.$1, p.$2).isEmpty).length;
+      expect(filledAfter, filledBefore, reason: 'an elimination places nothing');
+
+      controller.undo();
+      for (final (r, c, _) in step.removals) {
+        expect(state().board.cellAt(r, c).notes, isEmpty);
+      }
+    });
+
+    test('applying an elimination moves the next hint on instead of repeating it', () {
+      controller.restore(eliminationFixture());
+      final first = controller.peekHint()!;
+
+      controller.confirmHint(first);
+      final second = controller.peekHint()!;
+
+      final firstRemovals = first.removals.toSet();
+      expect(second.removals.any(firstRemovals.contains), isFalse);
+    });
+
+    test('confirming the same elimination twice is a no-op the second time', () {
+      controller.restore(eliminationFixture());
+      final step = controller.peekHint()!;
+      controller.confirmHint(step);
+      final hintsAfterFirst = state().hintsRemaining;
+      final boardAfterFirst = state().board;
+
+      controller.confirmHint(step);
+
+      expect(state().hintsRemaining, hintsAfterFirst, reason: 'nothing left to cross out, nothing to charge');
+      expect(identical(state().board, boardAfterFirst), isTrue);
+    });
+
+    test('notes the player struck wrongly are ignored when working out the hint', () {
+      controller.restore(eliminationFixture());
+      final correct = controller.peekHint()!;
+      // Give a cell a note set that lacks its true value.
+      final (r, c, _) = correct.removals.first;
+      final trueValue = state().solution.cellAt(r, c).value;
+      final wrongNotes = {for (var v = 1; v <= 9; v++) if (v != trueValue) v};
+      controller.selectCell(r, c);
+      controller.toggleNotesMode();
+      for (final v in wrongNotes) {
+        if (Candidates.forCell(state().board, r, c).contains(v)) controller.inputNumber(v);
+      }
+      controller.toggleNotesMode();
+
+      final step = controller.peekHint()!;
+
+      for (final (rr, cc, digit) in step.removals) {
+        expect(digit, isNot(state().solution.cellAt(rr, cc).value));
+      }
+    });
   });
 
   test('autoFillNotes fills every empty cell with its legal candidates', () {
