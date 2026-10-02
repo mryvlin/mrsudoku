@@ -289,3 +289,12 @@ GameScreen/SettingsScreen/HomeScreen/SudokuBoardWidget UI.
   (`shared_preferences`), grouped by difficulty and board layout and capped
   at the 10 fastest per group; there's no cross-device sync or global
   ranking.
+
+## License
+
+Copyright (C) 2026 Michael Ryvlin
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. See [LICENSE](LICENSE) for the full text.
