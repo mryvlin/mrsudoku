@@ -78,7 +78,10 @@ class _ExplosionGame extends FlameGame {
     final shape = board.shape;
     final cellSize = boardRect.width / shape.width;
     final centerX = boardRect.left + boardRect.width / 2;
-    final centerY = boardRect.top + boardRect.height / 2;
+    // The painted grid is cellSize * shape.height tall, which can be less
+    // than boardRect.height (the board widget may be given more room than
+    // its aspect ratio needs), so center on the grid rather than the rect.
+    final centerY = boardRect.top + cellSize * shape.height / 2;
 
     for (final (row, col) in shape.activeCells) {
       final value = board.cellAt(row, col).value;

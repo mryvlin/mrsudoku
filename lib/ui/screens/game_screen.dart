@@ -286,7 +286,15 @@ class _GameScreenState extends ConsumerState<GameScreen> with WidgetsBindingObse
     final l10n = AppLocalizations.of(context)!;
     final renderBox = _boardKey.currentContext?.findRenderObject() as RenderBox?;
     if (renderBox != null) {
-      final boardRect = renderBox.localToGlobal(Offset.zero) & renderBox.size;
+      // Map both corners to global coordinates instead of combining the
+      // origin with renderBox.size: size is in the board's own local space,
+      // so under the InteractiveViewer used for non-classic layouts (zoomed
+      // in) it would be too small and the digits would only cover the
+      // board's top-left corner.
+      final boardRect = Rect.fromPoints(
+        renderBox.localToGlobal(Offset.zero),
+        renderBox.localToGlobal(renderBox.size.bottomRight(Offset.zero)),
+      );
       showWinCelebration(context, board: board, boardRect: boardRect);
     }
     showDialog(
