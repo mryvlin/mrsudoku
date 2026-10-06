@@ -5,6 +5,7 @@ import '../../models/board.dart';
 import '../../models/puzzle_shape.dart';
 import '../../models/settings.dart';
 import '../highlight_colors.dart';
+import 'hint_lines.dart';
 
 /// Renders [board]'s full grid - a plain 9x9 for the classic layout, or a
 /// Samurai board's 21x21 bounding shape with its blank corner gaps - as a
@@ -43,7 +44,7 @@ class SudokuBoardWidget extends StatelessWidget {
 
   /// Soft amber used for hint tints - deliberately not the player's chosen
   /// highlight color, so a hint never reads as a selection.
-  static const hintColor = Color(0xFFFFB300);
+  static const hintColor = hintAmber;
 
   const SudokuBoardWidget({
     super.key,
@@ -225,6 +226,7 @@ class SudokuBoardWidget extends StatelessWidget {
                 noteStyle: theme.textTheme.labelSmall ?? const TextStyle(),
                 noteColor: theme.colorScheme.onSurfaceVariant,
                 strikeColor: theme.colorScheme.error,
+                hintLines: hintStep != null && hintStage >= 2 ? hintStep!.lines : const [],
                 highlightColor: resolvedHighlight,
                 highlightedValue: highlightedValue,
               ),
@@ -277,6 +279,7 @@ class _BoardPainter extends CustomPainter {
   final TextStyle noteStyle;
   final Color noteColor;
   final Color strikeColor;
+  final List<HintLine> hintLines;
   final Color highlightColor;
   final int highlightedValue;
 
@@ -289,6 +292,7 @@ class _BoardPainter extends CustomPainter {
     required this.noteStyle,
     required this.noteColor,
     required this.strikeColor,
+    required this.hintLines,
     required this.highlightColor,
     required this.highlightedValue,
   });
@@ -319,6 +323,16 @@ class _BoardPainter extends CustomPainter {
       backgroundPaint.color = entry.value.background;
       canvas.drawRect(rect, backgroundPaint);
     }
+
+    // A hint's structure lines (fish lines, wing links) go over the tints
+    // but under the borders and digits drawn next.
+    paintHintLines(
+      canvas,
+      hintLines,
+      center: (cell) => Offset((cell.$2 + 0.5) * cellSize, (cell.$1 + 0.5) * cellSize),
+      width: cellSize * 0.1,
+      ruleColor: strikeColor,
+    );
 
     for (final entry in visuals.entries) {
       final (row, col) = entry.key;

@@ -151,5 +151,7 @@
   "guideXWing": "When a digit can only go in the same two columns in two different rows, it ends up in two opposite corners of a rectangle. So it can be removed from the rest of those two columns (and the same works with rows and columns swapped).",
   "guideXYWing": "A cell with candidates A and B sees two cells holding A+C and B+C. Whichever way the first cell turns out, C lands in one of the other two. So C can be removed from any cell that sees both of them.",
   "guideSwordfish": "Like an X-Wing, but across three rows and three columns: if a digit in three rows is confined to the same three columns, it can be removed from the rest of those columns (and likewise with rows and columns swapped).",
-  "wonHintsUsed": "Hints used: {count}"
+  "wonHintsUsed": "Hints used: {count}",
+
+  "guideLegendLines": "Lines: the rows and columns involved (rectangle patterns) or the cells that see each other (wings); dashed: also sees it."
 }

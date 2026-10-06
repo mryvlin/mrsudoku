@@ -889,6 +889,12 @@ abstract class AppLocalizations {
   /// In de, this message translates to:
   /// **'Genutzte Hinweise: {count}'**
   String wonHintsUsed(int count);
+
+  /// Technique guide: extra legend line for diagrams that draw lines.
+  ///
+  /// In de, this message translates to:
+  /// **'Linien: die beteiligten Zeilen und Spalten (rechteckiges Muster) bzw. die Zellen, die einander sehen (Wing); gestrichelt: sieht ebenfalls.'**
+  String get guideLegendLines;
 }
 
 class _AppLocalizationsDelegate

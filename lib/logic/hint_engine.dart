@@ -60,6 +60,40 @@ extension EliminationPatternX on EliminationPattern {
 /// A candidate to cross out: (row, col, digit).
 typedef Removal = (int, int, int);
 
+/// What a [HintLine] stands for, which decides how the UI draws it.
+enum HintLineRole {
+  /// A fish's base line (the rows, say, holding the digit in an X-Wing).
+  base,
+
+  /// A fish's cover line (the columns the base rows' candidates are
+  /// confined to).
+  cover,
+
+  /// A wing's pivot-to-pincer link: the two cells see each other.
+  link,
+
+  /// From a pincer to a cell losing a candidate: that cell sees it too.
+  rule,
+}
+
+/// A line the UI draws over the board between two cells' centers, to show a
+/// pattern's structure - the lines of a fish, the links of a wing - rather
+/// than leave the player to infer it from tinted cells alone.
+class HintLine {
+  final (int, int) from;
+  final (int, int) to;
+  final HintLineRole role;
+
+  const HintLine(this.from, this.to, this.role);
+
+  @override
+  bool operator ==(Object other) =>
+      other is HintLine && other.from == from && other.to == to && other.role == role;
+
+  @override
+  int get hashCode => Object.hash(from, to, role);
+}
+
 /// One logically derived step. A [HintKind.place] step says: place [value]
 /// at (row, col) because of [technique]. A [HintKind.eliminate] step (see
 /// [HintStep.elimination]) says: [pattern] lets the player cross out
@@ -85,6 +119,9 @@ class HintStep {
   final Set<int> evidenceDigits;
   final List<Removal> removals;
 
+  /// Structure to draw for fish and wings; empty for every other step.
+  final List<HintLine> lines;
+
   const HintStep({
     required this.row,
     required this.col,
@@ -98,6 +135,7 @@ class HintStep {
         evidenceCells = const [],
         evidenceDigits = const {},
         removals = const [],
+        lines = const [],
         assert(
           (singleKind == SingleKind.hidden) == (hiddenUnit != null),
           'hiddenUnit must be set if and only if singleKind is hidden - '
@@ -112,6 +150,7 @@ class HintStep {
     required this.evidenceCells,
     required this.evidenceDigits,
     required this.regionCells,
+    this.lines = const [],
   })  : assert(removals.isNotEmpty),
         kind = HintKind.eliminate,
         row = removals.first.$1,
@@ -138,7 +177,8 @@ class HintStep {
         pattern = null,
         evidenceCells = const [],
         evidenceDigits = const {},
-        removals = const [];
+        removals = const [],
+        lines = const [];
 
   /// Whether the tiered display (nudge, explanation, answer) applies. The
   /// direct-reveal fallback has no logic to walk through.
@@ -638,6 +678,10 @@ class HintEngine {
               evidenceCells: evidence,
               evidenceDigits: {value},
               regionCells: [for (final u in [...chosen, ...union]) ...u.cells],
+              lines: [
+                for (final p in chosen) HintLine(p.cells.first, p.cells.last, HintLineRole.base),
+                for (final u in union) HintLine(u.cells.first, u.cells.last, HintLineRole.cover),
+              ],
             ));
           }
           return;
@@ -703,6 +747,14 @@ class HintEngine {
               evidenceCells: [pivot, x, y],
               evidenceDigits: {a, b, c},
               regionCells: [for (final u in board.unitsContaining(pivot.$1, pivot.$2)) ...u.cells],
+              lines: [
+                HintLine(pivot, x, HintLineRole.link),
+                HintLine(pivot, y, HintLineRole.link),
+                for (final cell in {for (final (r, col, _) in removals) (r, col)}) ...[
+                  HintLine(x, cell, HintLineRole.rule),
+                  HintLine(y, cell, HintLineRole.rule),
+                ],
+              ],
             ));
           }
         }

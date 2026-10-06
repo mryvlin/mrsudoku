@@ -1,8 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mrsudoku/logic/candidates.dart';
+import 'package:mrsudoku/logic/generator.dart';
 import 'package:mrsudoku/logic/hint_engine.dart';
 import 'package:mrsudoku/logic/solver.dart';
 import 'package:mrsudoku/models/board.dart';
+import 'package:mrsudoku/models/difficulty.dart';
 
 void main() {
   group('HintStep', () {
@@ -407,6 +409,100 @@ void main() {
         expect(touching, isNotNull);
         expect(touching!.removalCells.contains((first.row, first.col)) ||
             touching.evidenceCells.contains((first.row, first.col)), isTrue);
+      });
+    });
+
+    group('structure lines', () {
+      /// Follows the hint ladder on [fixtureName]'s board until it first
+      /// produces a step with [pattern] (applying every step as the player
+      /// would), or returns null if the ladder ends without one.
+      HintStep? firstStepWith(String fixtureName, EliminationPattern pattern) {
+        final (values, _) = fixtures[fixtureName]!;
+        var board = Board.fromValues(values);
+        var known = Candidates.forBoard(board);
+        for (var i = 0; i < 500; i++) {
+          final step = HintEngine.nextHint(board, candidates: known);
+          if (step == null) return null;
+          if (step.pattern == pattern) return step;
+          if (step.kind == HintKind.place) {
+            board = board.setCell(step.row, step.col, board.cellAt(step.row, step.col).copyWith(value: step.value));
+            known = Candidates.forBoard(board);
+          } else {
+            for (final (r, c, d) in step.removals) {
+              known[r][c].remove(d);
+            }
+          }
+        }
+        return null;
+      }
+
+      bool sameRow(HintLine l) => l.from.$1 == l.to.$1;
+      bool sameCol(HintLine l) => l.from.$2 == l.to.$2;
+
+      test('an X-Wing draws two base lines and two cover lines, one pair per axis', () {
+        final step = firstStepWith('xWing', EliminationPattern.xWing);
+
+        expect(step, isNotNull, reason: 'the X-Wing fixture must reach an X-Wing step');
+        final base = step!.lines.where((l) => l.role == HintLineRole.base).toList();
+        final cover = step.lines.where((l) => l.role == HintLineRole.cover).toList();
+        expect(base, hasLength(2));
+        expect(cover, hasLength(2));
+        // Base lines run along one axis and the cover lines along the other.
+        expect(base.every(sameRow) || base.every(sameCol), isTrue);
+        expect(cover.every(sameRow) || cover.every(sameCol), isTrue);
+        expect(base.every(sameRow), isNot(cover.every(sameRow)));
+        // Every evidence cell is where a base and a cover line cross.
+        expect(step.evidenceCells, hasLength(4));
+      });
+
+      test('a Swordfish draws three base and three cover lines', () {
+        // The ladder repeats the cheaper tiers, so it only needs a Swordfish
+        // on a few puzzles; Expert seed 53 is one (found by searching, and
+        // stable because generation is reproducible per seed).
+        var board = Generator.generate(Difficulty.expert, seed: 53).puzzle;
+        var known = Candidates.forBoard(board);
+        HintStep? step;
+        for (var i = 0; i < 400 && step == null; i++) {
+          final next = HintEngine.nextHint(board, candidates: known);
+          if (next == null) break;
+          if (next.pattern == EliminationPattern.swordfish) {
+            step = next;
+          } else if (next.kind == HintKind.place) {
+            board = board.setCell(next.row, next.col, board.cellAt(next.row, next.col).copyWith(value: next.value));
+            known = Candidates.forBoard(board);
+          } else {
+            for (final (r, c, d) in next.removals) {
+              known[r][c].remove(d);
+            }
+          }
+        }
+
+        expect(step, isNotNull, reason: 'Expert seed 53 must reach a Swordfish step');
+        expect(step!.lines.where((l) => l.role == HintLineRole.base), hasLength(3));
+        expect(step.lines.where((l) => l.role == HintLineRole.cover), hasLength(3));
+      });
+
+      test('an XY-Wing links the pivot to both pincers and both pincers to every cell losing the digit', () {
+        final step = firstStepWith('xyWing', EliminationPattern.xyWing);
+
+        expect(step, isNotNull, reason: 'the XY-Wing fixture must reach an XY-Wing step');
+        final pivot = step!.evidenceCells[0];
+        final links = step.lines.where((l) => l.role == HintLineRole.link).toList();
+        expect(links.map((l) => l.from).toSet(), {pivot});
+        expect(links.map((l) => l.to).toSet(), {step.evidenceCells[1], step.evidenceCells[2]});
+
+        final rules = step.lines.where((l) => l.role == HintLineRole.rule).toList();
+        expect(rules, hasLength(step.removalCells.length * 2));
+        expect(rules.map((l) => l.to).toSet(), step.removalCells);
+        expect(rules.map((l) => l.from).toSet(), {step.evidenceCells[1], step.evidenceCells[2]});
+      });
+
+      test('steps without a fish or wing structure carry no lines', () {
+        final (values, _) = fixtures['pointing']!;
+        final step = HintEngine.nextHint(Board.fromValues(values))!;
+
+        expect(step.pattern, isNot(anyOf(EliminationPattern.xWing, EliminationPattern.xyWing, EliminationPattern.swordfish)));
+        expect(step.lines, isEmpty);
       });
     });
   });

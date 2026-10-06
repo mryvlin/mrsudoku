@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../logic/hint_engine.dart';
 import '../hint_text.dart';
-import 'sudoku_board_widget.dart';
+import 'hint_lines.dart';
 
 /// A small schematic per technique: `E` marks the cells that form the
 /// pattern, `X` the cells a digit is ruled out of (or removed from), `.` an
@@ -55,6 +56,31 @@ const Map<GuideTopic, List<String>> _diagrams = {
   ],
 };
 
+/// The structure lines drawn over the schematics of the fish and wings, in
+/// the same style the board uses for a real hint (see [paintHintLines]).
+const Map<GuideTopic, List<HintLine>> _diagramLines = {
+  GuideTopic.xWing: [
+    HintLine((0, 0), (0, 3), HintLineRole.base),
+    HintLine((3, 0), (3, 3), HintLineRole.base),
+    HintLine((0, 0), (4, 0), HintLineRole.cover),
+    HintLine((0, 3), (4, 3), HintLineRole.cover),
+  ],
+  GuideTopic.swordfish: [
+    HintLine((0, 0), (0, 2), HintLineRole.base),
+    HintLine((2, 0), (2, 4), HintLineRole.base),
+    HintLine((4, 2), (4, 4), HintLineRole.base),
+    HintLine((0, 0), (4, 0), HintLineRole.cover),
+    HintLine((0, 2), (4, 2), HintLineRole.cover),
+    HintLine((0, 4), (4, 4), HintLineRole.cover),
+  ],
+  GuideTopic.xyWing: [
+    HintLine((0, 0), (0, 3), HintLineRole.link),
+    HintLine((0, 0), (3, 0), HintLineRole.link),
+    HintLine((0, 3), (3, 3), HintLineRole.rule),
+    HintLine((3, 0), (3, 3), HintLineRole.rule),
+  ],
+};
+
 /// Opens the guide for the technique behind [step]: its name, a schematic
 /// of the pattern and the rule in plain words.
 void showTechniqueGuide(BuildContext context, GuideTopic topic) {
@@ -71,6 +97,11 @@ void showTechniqueGuide(BuildContext context, GuideTopic topic) {
             Center(child: TechniqueDiagram(topic: topic)),
             const SizedBox(height: 8),
             Text(l10n.guideLegend, style: Theme.of(context).textTheme.bodySmall),
+            if (_diagramLines.containsKey(topic))
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(l10n.guideLegendLines, style: Theme.of(context).textTheme.bodySmall),
+              ),
             const SizedBox(height: 12),
             Text(guideBody(topic, l10n)),
           ],
@@ -106,8 +137,9 @@ class TechniqueDiagram extends StatelessWidget {
           cell: cell,
           line: Theme.of(context).colorScheme.outline,
           fill: Theme.of(context).colorScheme.surfaceContainerHighest,
-          pattern: SudokuBoardWidget.hintColor,
+          pattern: hintAmber,
           ruledOut: Theme.of(context).colorScheme.error,
+          lines: _diagramLines[topic] ?? const [],
         ),
       ),
     );
@@ -121,6 +153,7 @@ class _DiagramPainter extends CustomPainter {
   final Color fill;
   final Color pattern;
   final Color ruledOut;
+  final List<HintLine> lines;
 
   _DiagramPainter({
     required this.rows,
@@ -129,6 +162,7 @@ class _DiagramPainter extends CustomPainter {
     required this.fill,
     required this.pattern,
     required this.ruledOut,
+    required this.lines,
   });
 
   @override
@@ -172,6 +206,13 @@ class _DiagramPainter extends CustomPainter {
         }
       }
     }
+    paintHintLines(
+      canvas,
+      lines,
+      center: (cellPos) => Offset((cellPos.$2 + 0.5) * cell, (cellPos.$1 + 0.5) * cell),
+      width: cell * 0.12,
+      ruleColor: ruledOut,
+    );
     // Nine-wide diagrams are one row/column of a real board: mark its box
     // boundaries like the board does.
     if (rows.first.length == 9) {

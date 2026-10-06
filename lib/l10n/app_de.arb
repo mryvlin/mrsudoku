@@ -343,5 +343,8 @@
   "guideSwordfish": "Wie ein X-Wing, aber über drei Zeilen und drei Spalten: Steckt eine Ziffer in drei Zeilen in denselben drei Spalten fest, entfällt sie im Rest dieser Spalten (und ebenso mit vertauschten Zeilen und Spalten).",
   "@guideSwordfish": {"description": "Technique guide text."},
   "wonHintsUsed": "Genutzte Hinweise: {count}",
-  "@wonHintsUsed": {"description": "Line in the win dialog showing how many hints were used.", "placeholders": {"count": {"type": "int"}}}
+  "@wonHintsUsed": {"description": "Line in the win dialog showing how many hints were used.", "placeholders": {"count": {"type": "int"}}},
+
+  "guideLegendLines": "Linien: die beteiligten Zeilen und Spalten (rechteckiges Muster) bzw. die Zellen, die einander sehen (Wing); gestrichelt: sieht ebenfalls.",
+  "@guideLegendLines": {"description": "Technique guide: extra legend line for diagrams that draw lines."}
 }

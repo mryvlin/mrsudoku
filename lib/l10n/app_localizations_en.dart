@@ -472,4 +472,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String wonHintsUsed(int count) {
     return 'Hints used: $count';
   }
+
+  @override
+  String get guideLegendLines =>
+      'Lines: the rows and columns involved (rectangle patterns) or the cells that see each other (wings); dashed: also sees it.';
 }

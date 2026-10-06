@@ -147,7 +147,10 @@ test/
   - When the next logical move is only a reasoning step - a naked pair,
     X-Wing and the like - the hint is an elimination: the candidates it
     rules out are drawn struck through, and taking it crosses them out of
-    your notes instead of placing a number.
+    your notes instead of placing a number. Fish and wings also draw their
+    structure: the base and cover lines of an X-Wing or Swordfish, and the
+    pivot-to-pincer links of an XY-Wing (with dashed lines to the cells
+    that lose a candidate).
   - Hints respect your notes, so every hint moves on from the last one, and a
     single close to the selected cell is preferred. A setting can restrict
     hints to the selected cell.

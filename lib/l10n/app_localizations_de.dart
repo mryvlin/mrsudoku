@@ -475,4 +475,8 @@ class AppLocalizationsDe extends AppLocalizations {
   String wonHintsUsed(int count) {
     return 'Genutzte Hinweise: $count';
   }
+
+  @override
+  String get guideLegendLines =>
+      'Linien: die beteiligten Zeilen und Spalten (rechteckiges Muster) bzw. die Zellen, die einander sehen (Wing); gestrichelt: sieht ebenfalls.';
 }

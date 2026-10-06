@@ -132,5 +132,60 @@ void main() {
         expect(find.byType(SudokuBoardWidget), findsOneWidget);
       });
     }
+
+    testWidgets('renders a fish with base and cover lines at stage 2', (tester) async {
+      final fish = HintStep.elimination(
+        pattern: EliminationPattern.xWing,
+        removals: const [(1, 0, 3)],
+        evidenceCells: const [(0, 0), (0, 3), (3, 0), (3, 3)],
+        evidenceDigits: const {3},
+        regionCells: const [(0, 0), (0, 3), (3, 0), (3, 3)],
+        lines: const [
+          HintLine((0, 0), (0, 8), HintLineRole.base),
+          HintLine((3, 0), (3, 8), HintLineRole.base),
+          HintLine((0, 0), (8, 0), HintLineRole.cover),
+          HintLine((0, 3), (8, 3), HintLineRole.cover),
+        ],
+      );
+      final wing = HintStep.elimination(
+        pattern: EliminationPattern.xyWing,
+        removals: const [(3, 3, 3)],
+        evidenceCells: const [(0, 0), (0, 3), (3, 0)],
+        evidenceDigits: const {1, 2, 3},
+        regionCells: const [(0, 0)],
+        lines: const [
+          HintLine((0, 0), (0, 3), HintLineRole.link),
+          HintLine((0, 0), (3, 0), HintLineRole.link),
+          HintLine((0, 3), (3, 3), HintLineRole.rule),
+          HintLine((3, 0), (3, 3), HintLineRole.rule),
+        ],
+      );
+
+      for (final step in [fish, wing]) {
+        for (final stage in [1, 2, 3]) {
+          await tester.pumpWidget(MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 360,
+                height: 360,
+                child: SudokuBoardWidget(
+                  board: Board.empty(),
+                  solution: null,
+                  selectedRow: null,
+                  selectedCol: null,
+                  highlightEnabled: true,
+                  highlightColor: HighlightColor.red,
+                  showErrors: false,
+                  hintStep: step,
+                  hintStage: stage,
+                  onCellTap: (row, col) {},
+                ),
+              ),
+            ),
+          ));
+          expect(tester.takeException(), isNull, reason: '${step.pattern} stage $stage');
+        }
+      }
+    });
   });
 }
