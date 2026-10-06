@@ -1,0 +1,16 @@
+MrSudoku ist ein vollständiges Sudoku-Spiel, das komplett offline funktioniert – ohne Werbung, ohne Tracking und ohne Cloud-Konto.
+
+<b>Fünf Brettformen</b>
+Klassisch (ein einzelnes 9x9-Gitter), Samurai (fünf überlappende Gitter), Twin (zwei überlappende Gitter), Gattai-8 (acht Gitter, auch Harakiri genannt) und Sohei (vier Gitter im Ring), jeweils in vier Schwierigkeitsstufen.
+
+<b>Spielen, wie du willst</b>
+• Notizen (Bleistiftmarkierungen) mit Auto-Notizen per Fingertipp
+• Rückgängig und Wiederholen, pausierbarer Timer
+• Optionales Auto-Lösen, das Felder mit nur einer möglichen Ziffer ausfüllt und deine Notizen berücksichtigt
+• Lokale Bestenliste mit deinen schnellsten Zeiten, je Schwierigkeit und Brettform
+• Heller und dunkler Modus, auf Deutsch und Englisch
+
+<b>Hinweise, die etwas beibringen</b>
+Die Hinweise sind gestuft, du siehst also nur so viel, wie du möchtest: erst die Technik, dann wo du suchen musst, dann die Lösung. Zu den Techniken gehören Naked und Hidden Singles, Naked Pairs, Pointing Pairs, X-Wing, Swordfish und Wings. Bei Fisch- und Wing-Hinweisen werden die Linien auf dem Brett eingezeichnet. Hinweise berücksichtigen deine Notizen und zeigen Fehler an, und eine Technik-Anleitung in der App erklärt jede Methode.
+
+MrSudoku ist freie Software unter der GPL-3.0.

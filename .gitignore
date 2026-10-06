@@ -46,3 +46,13 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Local tooling
+.claude/
+claude-code-prompt-sudoku.md
+
+# Signing and local config
+*.jks
+*.keystore
+key.properties
+android/local.properties

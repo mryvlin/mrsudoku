@@ -1,0 +1,1 @@
+Offline-Sudoku mit fünf Brettformen, Notizen und schrittweisen Hinweisen

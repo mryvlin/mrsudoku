@@ -1,0 +1,1 @@
+Offline Sudoku with five board layouts, notes and step-by-step hints
